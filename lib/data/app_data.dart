@@ -1,6 +1,3 @@
-// lib/data/app_data.dart
-// Penyimpanan sementara di memori — nanti ganti dengan database asli
-
 class InventoryItem {
   final String name;
   final String category;
@@ -16,7 +13,7 @@ class InventoryItem {
 }
 
 class AppData {
-  // Singleton agar data bisa diakses dari mana saja
+  // Singleton agar bisa diakses dari mana saja
   static final AppData _instance = AppData._internal();
   factory AppData() => _instance;
   AppData._internal();
@@ -25,6 +22,11 @@ class AppData {
 
   void addItems(List<InventoryItem> items) {
     inventory.addAll(items);
+  }
+
+  // Tambah item tunggal
+  void addItem(InventoryItem item) {
+    inventory.add(item);
   }
 
   // Total spending per bulan
@@ -46,6 +48,12 @@ class AppData {
     return result;
   }
 
+  // Total semua spending
+  int get totalSpending {
+    return inventory.fold(0, (sum, item) => sum + item.price);
+  }
+
+  // Helper label bulan
   String _monthLabel(DateTime date) {
     const months = [
       '', 'January', 'February', 'March', 'April', 'May', 'June',
