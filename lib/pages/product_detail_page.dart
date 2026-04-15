@@ -17,10 +17,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   @override
   void initState() {
     super.initState();
-    _product = widget.product;
+
+    // 🔥 FIX: cegah null masuk ke int
+    _product = widget.product.copyWith(
+      price: widget.product.price,
+      quantity: widget.product.quantity,
+    );
   }
 
-  int get _daysUntilExpiry => _product.expiryDate.difference(DateTime.now()).inDays;
+  int get _daysUntilExpiry =>
+      _product.expiryDate.difference(DateTime.now()).inDays;
 
   Color get _expiryColor {
     if (_daysUntilExpiry < 0) return AppColors.danger;
@@ -31,12 +37,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   String get _expiryStatus {
     if (_daysUntilExpiry < 0) return 'Sudah Expired';
     if (_daysUntilExpiry == 0) return 'Expired hari ini!';
-    if (_daysUntilExpiry <= 3) return 'Hampir expired (${_daysUntilExpiry} hari lagi)';
+    if (_daysUntilExpiry <= 3)
+      return 'Hampir expired (${_daysUntilExpiry} hari lagi)';
     return 'Masih aman';
   }
 
   void _showEditDialog() {
-    final qtyController = TextEditingController(text: _product.quantity.toString());
+    final qtyController =
+    TextEditingController(text: _product.quantity.toString());
     DateTime selectedDate = _product.expiryDate;
 
     showModalBottomSheet(
@@ -46,7 +54,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModal) => Container(
           padding: EdgeInsets.only(
-            left: 24, right: 24, top: 24,
+            left: 24,
+            right: 24,
+            top: 24,
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
           ),
           decoration: const BoxDecoration(
@@ -59,9 +69,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             children: [
               Center(
                 child: Container(
-                  width: 40, height: 4,
+                  width: 40,
+                  height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.textSecondary.withValues(alpha: 0.3),
+                    color:
+                    AppColors.textSecondary.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -77,54 +89,74 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
               ),
               const SizedBox(height: 20),
-              const Text('Kuantitas', style: TextStyle(fontFamily: 'Poppins', fontSize: 13, color: AppColors.textSecondary)),
+              const Text('Kuantitas',
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 13,
+                      color: AppColors.textSecondary)),
               const SizedBox(height: 6),
               TextField(
                 controller: qtyController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   suffixText: _product.unit,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.primary),
+                    borderSide:
+                    const BorderSide(color: AppColors.primary),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
                 ),
                 style: const TextStyle(fontFamily: 'Poppins'),
               ),
               const SizedBox(height: 16),
-              const Text('Tanggal Expired', style: TextStyle(fontFamily: 'Poppins', fontSize: 13, color: AppColors.textSecondary)),
+              const Text('Tanggal Expired',
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 13,
+                      color: AppColors.textSecondary)),
               const SizedBox(height: 6),
               GestureDetector(
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: ctx,
                     initialDate: selectedDate,
-                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                    firstDate:
+                    DateTime.now().subtract(const Duration(days: 365)),
+                    lastDate:
+                    DateTime.now().add(const Duration(days: 3650)),
                     builder: (context, child) => Theme(
                       data: Theme.of(context).copyWith(
-                        colorScheme: const ColorScheme.light(primary: AppColors.primary),
+                        colorScheme: const ColorScheme.light(
+                            primary: AppColors.primary),
                       ),
                       child: child!,
                     ),
                   );
-                  if (picked != null) setModal(() => selectedDate = picked);
+                  if (picked != null)
+                    setModal(() => selectedDate = picked);
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade400),
+                    border:
+                    Border.all(color: Colors.grey.shade400),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today_outlined, size: 18, color: AppColors.primary),
+                      const Icon(Icons.calendar_today_outlined,
+                          size: 18, color: AppColors.primary),
                       const SizedBox(width: 10),
                       Text(
                         '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
-                        style: const TextStyle(fontFamily: 'Poppins', color: AppColors.textPrimary),
+                        style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: AppColors.textPrimary),
                       ),
                     ],
                   ),
@@ -135,20 +167,33 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    final newQty = int.tryParse(qtyController.text) ?? _product.quantity;
-                    final updated = _product.copyWith(quantity: newQty, expiryDate: selectedDate);
+                    final newQty =
+                        int.tryParse(qtyController.text) ??
+                            _product.quantity;
+
+                    final updated = _product.copyWith(
+                      quantity: newQty,
+                      expiryDate: selectedDate,
+                    );
+
                     setState(() => _product = updated);
                     Navigator.pop(ctx);
                     Navigator.pop(context, updated);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding:
+                    const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius:
+                        BorderRadius.circular(12)),
                   ),
                   child: const Text(
                     'Simpan',
-                    style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppColors.surface),
+                    style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.surface),
                   ),
                 ),
               ),
@@ -163,16 +208,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Hapus Produk?', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w700)),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Hapus Produk?',
+            style: TextStyle(
+                fontFamily: 'Poppins', fontWeight: FontWeight.w700)),
         content: Text(
           'Produk "${_product.name}" akan dihapus dari daftar.',
-          style: const TextStyle(fontFamily: 'Poppins', fontSize: 13, color: AppColors.textSecondary),
+          style: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 13,
+              color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal', style: TextStyle(fontFamily: 'Poppins', color: AppColors.textSecondary)),
+            child: const Text('Batal',
+                style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -181,9 +235,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.danger,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
-            child: const Text('Hapus', style: TextStyle(fontFamily: 'Poppins', color: Colors.white)),
+            child: const Text('Hapus',
+                style: TextStyle(
+                    fontFamily: 'Poppins', color: Colors.white)),
           ),
         ],
       ),
@@ -199,7 +256,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 18),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: AppColors.textPrimary, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -213,7 +271,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+            icon:
+            const Icon(Icons.delete_outline, color: AppColors.danger),
             onPressed: _confirmDelete,
           ),
         ],
@@ -223,19 +282,21 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status banner
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: _expiryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _expiryColor.withValues(alpha: 0.3)),
+                border: Border.all(
+                    color: _expiryColor.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
                   Icon(
-                    _daysUntilExpiry < 0 ? Icons.error_outline : Icons.access_time_outlined,
+                    _daysUntilExpiry < 0
+                        ? Icons.error_outline
+                        : Icons.access_time_outlined,
                     color: _expiryColor,
                   ),
                   const SizedBox(width: 10),
@@ -253,7 +314,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ),
             const SizedBox(height: 20),
 
-            // Info Cards
             _InfoCard(
               icon: Icons.label_outline,
               label: 'Nama Produk',
@@ -267,9 +327,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ),
             const SizedBox(height: 12),
             _InfoCard(
+              icon: Icons.price_change_outlined,
+              label: 'Harga',
+              value: _product.price.toString(),
+            ),
+            const SizedBox(height: 12),
+            _InfoCard(
               icon: Icons.calendar_today_outlined,
               label: 'Tanggal Expired',
-              value: '${_product.expiryDate.day} / ${_product.expiryDate.month} / ${_product.expiryDate.year}',
+              value:
+              '${_product.expiryDate.day} / ${_product.expiryDate.month} / ${_product.expiryDate.year}',
               valueColor: _expiryColor,
             ),
             const SizedBox(height: 12),
@@ -277,7 +344,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               icon: Icons.inventory_outlined,
               label: 'Sisa Kuantitas',
               value: '${_product.quantity} ${_product.unit}',
-              valueColor: _product.quantity <= 5 ? AppColors.warning : AppColors.textPrimary,
+              valueColor: _product.quantity <= 5
+                  ? AppColors.warning
+                  : AppColors.textPrimary,
             ),
             if (_product.barcode != null) ...[
               const SizedBox(height: 12),
@@ -293,15 +362,22 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: _showEditDialog,
-                icon: const Icon(Icons.edit_outlined, color: Colors.white, size: 18),
+                icon: const Icon(Icons.edit_outlined,
+                    color: Colors.white, size: 18),
                 label: const Text(
                   'Edit Produk',
-                  style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: Colors.white),
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding:
+                  const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius:
+                      BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -328,7 +404,8 @@ class _InfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding:
+      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -348,9 +425,18 @@ class _InfoCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(fontFamily: 'Poppins', fontSize: 11, color: AppColors.textSecondary)),
+                Text(label,
+                    style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 11,
+                        color: AppColors.textSecondary)),
                 const SizedBox(height: 2),
-                Text(value, style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, fontSize: 14, color: valueColor)),
+                Text(value,
+                    style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: valueColor)),
               ],
             ),
           ),

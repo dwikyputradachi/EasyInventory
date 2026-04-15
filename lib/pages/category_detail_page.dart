@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import '../constants/colors.dart';
 import '../models/product_model.dart';
 import 'product_detail_page.dart';
@@ -29,6 +30,7 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
         builder: (_) => AddProductPage(categoryName: widget.categoryName),
       ),
     );
+
     if (result != null && result is Product) {
       setState(() => _products.add(result));
     }
@@ -39,14 +41,66 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
       context,
       MaterialPageRoute(builder: (_) => ProductDetailPage(product: product)),
     );
+
     if (result == 'deleted') {
       setState(() => _products.remove(product));
     } else if (result is Product) {
       setState(() {
         final index = _products.indexOf(product);
-        _products[index] = result;
+        if (index != -1) {
+          _products[index] = result;
+        }
       });
     }
+  }
+
+  void _showDeleteDialog(Product product) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hapus Produk'),
+        content: const Text('Stok sudah 0. Mau hapus produk ini?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _products.remove(product);
+              });
+              Navigator.pop(context);
+            },
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🔥 FIX UTAMA (pakai copyWith)
+  void _increaseQty(Product p) {
+    setState(() {
+      final index = _products.indexOf(p);
+      if (index != -1) {
+        _products[index] = p.copyWith(quantity: p.quantity + 1);
+      }
+    });
+  }
+
+  void _decreaseQty(Product p) {
+    setState(() {
+      final index = _products.indexOf(p);
+
+      if (index != -1) {
+        if (p.quantity > 1) {
+          _products[index] = p.copyWith(quantity: p.quantity - 1);
+        } else {
+          _showDeleteDialog(p);
+        }
+      }
+    });
   }
 
   Color _expiryColor(DateTime expiry) {
@@ -73,7 +127,8 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 18),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: AppColors.textPrimary, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -90,7 +145,8 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
             padding: const EdgeInsets.only(right: 8),
             child: TextButton.icon(
               onPressed: _openAddProduct,
-              icon: const Icon(Icons.add, color: AppColors.primary, size: 18),
+              icon: const Icon(Icons.add,
+                  color: AppColors.primary, size: 18),
               label: const Text(
                 'Tambah',
                 style: TextStyle(
@@ -104,110 +160,185 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
           ),
         ],
       ),
+
       body: _products.isEmpty
           ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.4)),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Belum ada produk',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.inventory_2_outlined,
+                size: 64,
+                color: AppColors.textSecondary.withValues(alpha: 0.4)),
+            const SizedBox(height: 12),
+            const Text(
+              'Belum ada produk',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: AppColors.textSecondary,
+                fontSize: 14,
               ),
-            )
+            ),
+          ],
+        ),
+      )
           : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: _products.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final p = _products[index];
-                return GestureDetector(
-                  onTap: () => _openDetail(p),
+        padding: const EdgeInsets.all(16),
+        itemCount: _products.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final p = _products[index];
+
+          return Slidable(
+            key: ValueKey(p.id),
+
+            endActionPane: ActionPane(
+              motion: const StretchMotion(),
+              extentRatio: 0.5,
+              children: [
+                Expanded(
                   child: Container(
-                    padding: const EdgeInsets.all(14),
+                    margin: const EdgeInsets.symmetric(vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: Colors.red.shade100,
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        GestureDetector(
+                          onTap: () => _decreaseQty(p),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.remove,
+                                color: Colors.white, size: 20),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '${p.quantity}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () => _increaseQty(p),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.add,
+                                color: Colors.white, size: 20),
+                          ),
                         ),
                       ],
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ],
+            ),
+
+            child: GestureDetector(
+              onTap: () => _openDetail(p),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppColors.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.name,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                            ),
                           ),
-                          child: const Icon(Icons.inventory_2_outlined, color: AppColors.primary, size: 24),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const SizedBox(height: 4),
+                          Row(
                             children: [
-                              Text(
-                                p.name,
-                                style: const TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                  fontSize: 14,
+                              Container(
+                                padding:
+                                const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _expiryColor(p.expiryDate)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius:
+                                  BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  _expiryLabel(p.expiryDate),
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 11,
+                                    color: _expiryColor(p.expiryDate),
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: _expiryColor(p.expiryDate).withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      _expiryLabel(p.expiryDate),
-                                      style: TextStyle(
-                                        fontFamily: 'Poppins',
-                                        fontSize: 11,
-                                        color: _expiryColor(p.expiryDate),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Stok: ${p.quantity} ${p.unit}',
-                                    style: const TextStyle(
-                                      fontFamily: 'Poppins',
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(width: 8),
+                              Text(
+                                'Stok: ${p.quantity} ${p.unit}',
+                                style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        const Icon(Icons.chevron_right, color: AppColors.textSecondary),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                    const Icon(Icons.chevron_right,
+                        color: AppColors.textSecondary),
+                  ],
+                ),
+              ),
             ),
+          );
+        },
+      ),
     );
   }
 }

@@ -15,6 +15,7 @@ class _AddProductPageState extends State<AddProductPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _qtyController = TextEditingController();
+  final _priceController = TextEditingController();
   final _barcodeController = TextEditingController();
   String _selectedUnit = 'pcs';
   DateTime? _expiryDate;
@@ -66,8 +67,9 @@ class _AddProductPageState extends State<AddProductPage> {
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       name: _nameController.text.trim(),
       category: widget.categoryName,
+      price: int.parse(_priceController.text.trim()) ?? 0,
       expiryDate: _expiryDate!,
-      quantity: int.parse(_qtyController.text.trim()),
+      quantity: int.parse(_qtyController.text.trim()) ?? 0,
       unit: _selectedUnit,
       barcode: _barcodeController.text.trim().isEmpty ? null : _barcodeController.text.trim(),
     );
@@ -199,6 +201,16 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16),
+
+              _buildLabel('Harga *'),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: _priceController,
+                decoration: _inputDecoration('0', Icons.price_change_outlined),
+                style:  const TextStyle(fontFamily: 'Poppins'),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Harga Wajib diisi' : null,
               ),
               const SizedBox(height: 16),
 
