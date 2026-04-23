@@ -13,23 +13,24 @@ class InventoryItem {
 }
 
 class AppData {
-  // Singleton agar bisa diakses dari mana saja
   static final AppData _instance = AppData._internal();
   factory AppData() => _instance;
   AppData._internal();
 
   final List<InventoryItem> inventory = [];
 
+  // --- TAMBAHKAN INI ---
+  bool budgetRecommendationEnabled = false; 
+  // --------------------
+
   void addItems(List<InventoryItem> items) {
     inventory.addAll(items);
   }
 
-  // Tambah item tunggal
   void addItem(InventoryItem item) {
     inventory.add(item);
   }
 
-  // Total spending per bulan
   Map<String, int> get spendingPerMonth {
     final Map<String, int> result = {};
     for (final item in inventory) {
@@ -39,7 +40,6 @@ class AppData {
     return result;
   }
 
-  // Jumlah item per kategori
   Map<String, int> get itemsPerCategory {
     final Map<String, int> result = {};
     for (final item in inventory) {
@@ -48,12 +48,10 @@ class AppData {
     return result;
   }
 
-  // Total semua spending
   int get totalSpending {
     return inventory.fold(0, (sum, item) => sum + item.price);
   }
 
-  // Helper label bulan
   String _monthLabel(DateTime date) {
     const months = [
       '', 'January', 'February', 'March', 'April', 'May', 'June',
