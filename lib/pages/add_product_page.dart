@@ -67,9 +67,9 @@ class _AddProductPageState extends State<AddProductPage> {
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       name: _nameController.text.trim(),
       category: widget.categoryName,
-      price: int.parse(_priceController.text.trim()) ?? 0,
+      price: int.parse(_priceController.text.trim()),
       expiryDate: _expiryDate!,
-      quantity: int.parse(_qtyController.text.trim()) ?? 0,
+      quantity: int.parse(_qtyController.text.trim()),
       unit: _selectedUnit,
       barcode: _barcodeController.text.trim().isEmpty ? null : _barcodeController.text.trim(),
     );
