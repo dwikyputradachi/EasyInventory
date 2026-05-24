@@ -18,19 +18,29 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
 
-  final pages = const [
-    DashboardPage(),
-    InventoryPage(),
-    ShoppingListPage(),
-    StatisticsPage(),
-    ProfilePage(),
-  ];
+  void _openScan() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ScanPage()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      DashboardPage(
+        onOpenScan: _openScan,
+        onOpenInventory: () => setState(() => _currentIndex = 1),
+        onOpenShopping: () => setState(() => _currentIndex = 2),
+      ),
+      const InventoryPage(),
+      const ShoppingListPage(),
+      const StatisticsPage(),
+      const ProfilePage(),
+    ];
+
     return Scaffold(
       backgroundColor: AppColors.background,
-
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
@@ -50,34 +60,22 @@ class _HomePageState extends State<HomePage> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const NotificationPage(),
-                ),
+                MaterialPageRoute(builder: (_) => const NotificationPage()),
               );
             },
           ),
         ],
       ),
-
       body: pages[_currentIndex],
-
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton.extended(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const ScanPage(),
-            ),
-          );
-        },
+        onPressed: _openScan,
         icon: const Icon(Icons.receipt_long_outlined),
         label: const Text("Scan"),
       )
           : null,
-
       bottomNavigationBar: Container(
         height: 70,
         decoration: const BoxDecoration(
@@ -94,7 +92,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             _navItem(0, Icons.dashboard_outlined, "Dashboard"),
             _navItem(1, Icons.inventory_2_outlined, "Inventory"),
-            _navItem(2, Icons.shopping_cart_outlined, "List"),
+            _navItem(2, Icons.shopping_bag_outlined, "List"),
             _navItem(3, Icons.bar_chart_outlined, "Statistics"),
             _navItem(4, Icons.person_outline, "Profile"),
           ],
@@ -124,20 +122,15 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 8),
             Icon(
               icon,
-              color: active
-                  ? AppColors.primary
-                  : AppColors.textSecondary,
+              color: active ? AppColors.primary : AppColors.textSecondary,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight:
-                active ? FontWeight.w600 : FontWeight.w400,
-                color: active
-                    ? AppColors.primary
-                    : AppColors.textSecondary,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                color: active ? AppColors.primary : AppColors.textSecondary,
               ),
             ),
           ],

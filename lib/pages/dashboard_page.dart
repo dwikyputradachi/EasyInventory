@@ -3,7 +3,16 @@ import '../constants/colors.dart';
 import '../data/app_data.dart';
 
 class DashboardPage extends StatelessWidget {
-  const DashboardPage({super.key});
+  final VoidCallback? onOpenScan;
+  final VoidCallback? onOpenInventory;
+  final VoidCallback? onOpenShopping;
+
+  const DashboardPage({
+    super.key,
+    this.onOpenScan,
+    this.onOpenInventory,
+    this.onOpenShopping,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -40,33 +49,18 @@ class DashboardPage extends StatelessWidget {
           const SizedBox(height: 22),
           _title("Need Attention"),
           const SizedBox(height: 10),
-          _attentionTile(
-            "Santan",
-            "Low stock, consider restocking",
-            Icons.inventory_2,
-            AppColors.warning,
-          ),
-          _attentionTile(
-            "Rice",
-            "Expired in 3 days",
-            Icons.warning_amber,
-            AppColors.danger,
-          ),
-          _attentionTile(
-            "Toothpaste",
-            "Shopping list item not bought yet",
-            Icons.shopping_bag,
-            AppColors.primary,
-          ),
+          _attentionTile("Santan", "Low stock, consider restocking", Icons.inventory_2, AppColors.warning),
+          _attentionTile("Rice", "Expired in 3 days", Icons.warning_amber, AppColors.danger),
+          _attentionTile("Toothpaste", "Shopping list item not bought yet", Icons.shopping_bag, AppColors.primary),
 
           const SizedBox(height: 22),
           _title("Quick Actions"),
           const SizedBox(height: 10),
           Row(
             children: [
-              _actionCard("Scan Receipt", Icons.document_scanner_outlined, AppColors.primary),
-              _actionCard("Add Item", Icons.add_box_outlined, AppColors.secondary),
-              _actionCard("Shopping List", Icons.shopping_bag_outlined, AppColors.warning),
+              _actionCard("Scan", Icons.document_scanner_outlined, AppColors.primary, onOpenScan),
+              _actionCard("Add Item", Icons.add_box_outlined, AppColors.primary, onOpenInventory),
+              _actionCard("Shopping", Icons.shopping_bag_outlined, AppColors.primary, onOpenShopping),
             ],
           ),
 
@@ -114,9 +108,9 @@ class DashboardPage extends StatelessWidget {
           ],
         ),
         CircleAvatar(
-          backgroundColor: AppColors.primarySoft.withOpacity(0.15),
-          child: const Icon(Icons.person_2_outlined, color: AppColors.primary),
-        )
+          backgroundColor: AppColors.primarySoft,
+          child: Icon(Icons.person_2_outlined, color: Colors.white),
+        ),
       ],
     );
   }
@@ -136,43 +130,35 @@ class DashboardPage extends StatelessWidget {
               child: Icon(Icons.insights_rounded, color: Colors.white),
             ),
             const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Monthly Spending",
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Monthly Spending",
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Rp 420.000",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    "Rp 420.000",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                    ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.18),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      "12% higher than last month",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                      ),
-                    ),
+                  child: const Text(
+                    "12% higher than last month",
+                    style: TextStyle(color: Colors.white, fontSize: 11),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
@@ -184,45 +170,28 @@ class DashboardPage extends StatelessWidget {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppColors.primary.withOpacity(0.12),
-              child: const Icon(Icons.shopping_bag_outlined, color: AppColors.primary),
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Shopping Progress",
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    "5 of 8 items purchased",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Text(
-              "62%",
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-              ),
-            ),
-          ],
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.primary.withOpacity(0.12),
+          child: const Icon(Icons.shopping_bag_outlined, color: AppColors.primary),
+        ),
+        title: const Text(
+          "Shopping Progress",
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        subtitle: const Text(
+          "5 of 8 items purchased",
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        trailing: const Text(
+          "62%",
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: AppColors.primary,
+          ),
         ),
       ),
     );
@@ -230,37 +199,34 @@ class DashboardPage extends StatelessWidget {
 
   Widget _miniCard(String title, String value, IconData icon, Color color) {
     return Expanded(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        child: Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Column(
-              children: [
-                CircleAvatar(
-                  backgroundColor: color.withOpacity(0.12),
-                  child: Icon(icon, color: color, size: 20),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Column(
+            children: [
+              CircleAvatar(
+                backgroundColor: color.withOpacity(0.12),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: color,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                  ),
+              ),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
                 ),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -305,24 +271,26 @@ class DashboardPage extends StatelessWidget {
         ),
         subtitle: Text(
           subtitle,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
       ),
     );
   }
 
-  Widget _actionCard(String title, IconData icon, Color color) {
+  Widget _actionCard(
+      String title,
+      IconData icon,
+      Color color,
+      VoidCallback? onTap,
+      ) {
     return Expanded(
       child: Card(
         elevation: 0,
         color: color.withOpacity(0.10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: InkWell(
-          onTap: () {},
+          onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(12),
