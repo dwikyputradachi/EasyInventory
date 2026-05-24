@@ -13,20 +13,30 @@ class AddProductPage extends StatefulWidget {
 
 class _AddProductPageState extends State<AddProductPage> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _qtyController = TextEditingController();
-  final _priceController = TextEditingController();
-  final _barcodeController = TextEditingController();
-  String _selectedUnit = 'pcs';
-  DateTime? _expiryDate;
+  final _nameC = TextEditingController();
+  final _qtyC = TextEditingController();
+  final _priceC = TextEditingController();
+  final _barcodeC = TextEditingController();
 
-  final List<String> _units = ['pcs', 'kg', 'gram', 'liter', 'ml', 'botol', 'bungkus', 'ikat', 'kotak', 'butir', 'batang'];
+  String _unit = 'pcs';
+  DateTime? _expiredDate;
+
+  final units = const ['pcs', 'kg', 'gram', 'liter', 'ml', 'botol', 'bungkus'];
+
+  @override
+  void dispose() {
+    _nameC.dispose();
+    _qtyC.dispose();
+    _priceC.dispose();
+    _barcodeC.dispose();
+    super.dispose();
+  }
 
   void _pickDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now().add(const Duration(days: 7)),
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 3650)),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
@@ -35,28 +45,28 @@ class _AddProductPageState extends State<AddProductPage> {
         child: child!,
       ),
     );
-    if (picked != null) setState(() => _expiryDate = picked);
+
+    if (picked != null) setState(() => _expiredDate = picked);
   }
 
   void _scanBarcode() {
-    // TODO: integrasikan dengan paket mobile_scanner atau flutter_barcode_scanner
-    // Untuk sekarang simulasi hasil scan
-    setState(() => _barcodeController.text = '8991234567890');
+    setState(() => _barcodeC.text = '8991234567890');
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Scan barcode belum diimplementasi. Silakan isi manual.', style: TextStyle(fontFamily: 'Poppins')),
+        content: Text('Barcode scanner belum diimplementasi'),
         backgroundColor: AppColors.warning,
-        duration: Duration(seconds: 2),
       ),
     );
   }
 
-  void _submit() {
+  void _saveProduct() {
     if (!_formKey.currentState!.validate()) return;
-    if (_expiryDate == null) {
+
+    if (_expiredDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Pilih tanggal expired dulu!', style: TextStyle(fontFamily: 'Poppins')),
+          content: Text('Pilih tanggal expired dulu'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -65,24 +75,16 @@ class _AddProductPageState extends State<AddProductPage> {
 
     final product = Product(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: _nameController.text.trim(),
+      name: _nameC.text.trim(),
       category: widget.categoryName,
-      price: int.parse(_priceController.text.trim()),
-      expiryDate: _expiryDate!,
-      quantity: int.parse(_qtyController.text.trim()),
-      unit: _selectedUnit,
-      barcode: _barcodeController.text.trim().isEmpty ? null : _barcodeController.text.trim(),
+      price: int.parse(_priceC.text.trim()),
+      expiryDate: _expiredDate!,
+      quantity: int.parse(_qtyC.text.trim()),
+      unit: _unit,
+      barcode: _barcodeC.text.trim().isEmpty ? null : _barcodeC.text.trim(),
     );
 
     Navigator.pop(context, product);
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _qtyController.dispose();
-    _barcodeController.dispose();
-    super.dispose();
   }
 
   @override
@@ -94,205 +96,279 @@ class _AddProductPageState extends State<AddProductPage> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 18),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: AppColors.textPrimary, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          'Tambah Produk',
-          style: const TextStyle(
-            fontFamily: 'Poppins',
+        title: const Text(
+          'Add Product',
+          style: TextStyle(
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
             fontSize: 16,
           ),
         ),
       ),
-      body: SingleChildScrollView(
+      body: ListView(
         padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Scan Barcode Button
-              GestureDetector(
-                onTap: _scanBarcode,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3), style: BorderStyle.solid),
-                  ),
-                  child: const Column(
-                    children: [
-                      Icon(Icons.qr_code_scanner, color: AppColors.primary, size: 32),
-                      SizedBox(height: 6),
-                      Text(
-                        'Scan Barcode',
-                        style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppColors.primary),
-                      ),
-                      Text(
-                        'atau isi form manual di bawah',
-                        style: TextStyle(fontFamily: 'Poppins', fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              _buildLabel('Nama Produk *'),
-              const SizedBox(height: 6),
-              TextFormField(
-                controller: _nameController,
-                decoration: _inputDecoration('Contoh: Apel Fuji', Icons.label_outline),
-                style: const TextStyle(fontFamily: 'Poppins'),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Nama produk wajib diisi' : null,
-              ),
-              const SizedBox(height: 16),
-
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLabel('Kuantitas *'),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _qtyController,
-                          keyboardType: TextInputType.number,
-                          decoration: _inputDecoration('0', Icons.inventory_outlined),
-                          style: const TextStyle(fontFamily: 'Poppins'),
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) return 'Wajib diisi';
-                            if (int.tryParse(v) == null) return 'Angka saja';
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLabel('Satuan'),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          value: _selectedUnit,
-                          decoration: InputDecoration(
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: AppColors.primary),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          ),
-                          style: const TextStyle(fontFamily: 'Poppins', color: AppColors.textPrimary, fontSize: 13),
-                          items: _units.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                          onChanged: (v) => setState(() => _selectedUnit = v!),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              _buildLabel('Harga *'),
-              const SizedBox(height: 6),
-              TextFormField(
-                controller: _priceController,
-                decoration: _inputDecoration('0', Icons.price_change_outlined),
-                style:  const TextStyle(fontFamily: 'Poppins'),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Harga Wajib diisi' : null,
-              ),
-              const SizedBox(height: 16),
-
-              _buildLabel('Tanggal Expired *'),
-              const SizedBox(height: 6),
-              GestureDetector(
-                onTap: _pickDate,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade400),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today_outlined, size: 18, color: AppColors.primary),
-                      const SizedBox(width: 10),
-                      Text(
-                        _expiryDate == null
-                            ? 'Pilih tanggal expired'
-                            : '${_expiryDate!.day} / ${_expiryDate!.month} / ${_expiryDate!.year}',
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          color: _expiryDate == null ? AppColors.textSecondary : AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              _buildLabel('Barcode (Opsional)'),
-              const SizedBox(height: 6),
-              TextFormField(
-                controller: _barcodeController,
-                keyboardType: TextInputType.number,
-                decoration: _inputDecoration('Isi manual atau scan di atas', Icons.qr_code_outlined),
-                style: const TextStyle(fontFamily: 'Poppins'),
-              ),
-              const SizedBox(height: 32),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text(
-                    'Simpan Produk',
-                    style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: Colors.white, fontSize: 15),
-                  ),
-                ),
-              ),
-            ],
+        children: [
+          const Text(
+            'Input Item',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Add item to ${widget.categoryName}',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          _barcodeBox(),
+          const SizedBox(height: 20),
+
+          Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                _field(
+                  controller: _nameC,
+                  label: 'Product Name',
+                  hint: 'Example: Fuji Apple',
+                  icon: Icons.label_outline,
+                  validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Required' : null,
+                ),
+
+                const SizedBox(height: 14),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: _field(
+                        controller: _qtyC,
+                        label: 'Qty',
+                        hint: '0',
+                        icon: Icons.inventory_2_outlined,
+                        keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Required';
+                          if (int.tryParse(v) == null) return 'Number only';
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: _unitDropdown()),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                _field(
+                  controller: _priceC,
+                  label: 'Price',
+                  hint: '0',
+                  icon: Icons.price_change_outlined,
+                  keyboardType: TextInputType.number,
+                  validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Required' : null,
+                ),
+
+                const SizedBox(height: 14),
+                _datePicker(),
+
+                const SizedBox(height: 14),
+
+                _field(
+                  controller: _barcodeC,
+                  label: 'Barcode (Optional)',
+                  hint: 'Input manually or scan above',
+                  icon: Icons.qr_code_outlined,
+                  keyboardType: TextInputType.number,
+                ),
+
+                const SizedBox(height: 28),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _saveProduct,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Save Product',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _barcodeBox() {
+    return InkWell(
+      onTap: _scanBarcode,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.primary.withOpacity(0.25)),
+        ),
+        child: const Column(
+          children: [
+            Icon(Icons.qr_code_scanner, color: AppColors.primary, size: 34),
+            SizedBox(height: 8),
+            Text(
+              'Scan Barcode',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              'optional, you can also input manually',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(fontFamily: 'Poppins', fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textSecondary),
+  Widget _unitDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Unit'),
+        DropdownButtonFormField<String>(
+          value: _unit,
+          decoration: _input('', Icons.straighten),
+          items: units
+              .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+              .toList(),
+          onChanged: (v) => setState(() => _unit = v!),
+        ),
+      ],
     );
   }
 
-  InputDecoration _inputDecoration(String hint, IconData icon) {
+  Widget _datePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Expired Date'),
+        InkWell(
+          onTap: _pickDate,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today_outlined,
+                    size: 18, color: AppColors.primary),
+                const SizedBox(width: 10),
+                Text(
+                  _expiredDate == null
+                      ? 'Choose expired date'
+                      : '${_expiredDate!.day}/${_expiredDate!.month}/${_expiredDate!.year}',
+                  style: TextStyle(
+                    color: _expiredDate == null
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label(label),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          validator: validator,
+          decoration: _input(hint, icon),
+        ),
+      ],
+    );
+  }
+
+  Widget _label(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _input(String hint, IconData icon) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(fontFamily: 'Poppins', color: AppColors.textSecondary, fontSize: 13),
+      hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
       prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      filled: true,
+      fillColor: AppColors.surface,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: AppColors.primary),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
     );
   }
 }

@@ -22,19 +22,21 @@ class Product {
   Product copyWith({
     String? name,
     DateTime? expiryDate,
+    String? category,
     int? price,
     int? quantity,
     String? unit,
+    String? barcode,
   }) {
     return Product(
       id: id,
       name: name ?? this.name,
-      category: category,
+      category: category ?? this.category,
       price: price ?? this.price,
       expiryDate: expiryDate ?? this.expiryDate,
       quantity: quantity ?? this.quantity,
       unit: unit ?? this.unit,
-      barcode: barcode,
+      barcode: barcode ?? this.barcode,
     );
   }
 }

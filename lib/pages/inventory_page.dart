@@ -6,34 +6,116 @@ class InventoryPage extends StatelessWidget {
   const InventoryPage({super.key});
 
   static const List<Map<String, dynamic>> _categories = [
-    {'title': 'Fresh Food', 'count': 10, 'icon': Icons.kitchen},
-    {'title': 'Pantry', 'count': 10, 'icon': Icons.shelves},
-    {'title': 'Beverages', 'count': 10, 'icon': Icons.local_drink},
-    {'title': 'Toiletries', 'count': 10, 'icon': Icons.soap},
-    {'title': 'Households Items', 'count': 10, 'icon': Icons.home_repair_service},
-    {'title': 'Others', 'count': 10, 'icon': Icons.category},
+    {
+      'title': 'Fresh Food',
+      'count': 10,
+      'icon': Icons.eco_outlined,
+      'color': Color(0xFF22C55E),
+    },
+    {
+      'title': 'Pantry',
+      'count': 10,
+      'icon': Icons.kitchen_outlined,
+      'color': Color(0xFFF59E0B),
+    },
+    {
+      'title': 'Beverages',
+      'count': 10,
+      'icon': Icons.local_drink_outlined,
+      'color': Color(0xFF38BDF8),
+    },
+    {
+      'title': 'Toiletries',
+      'count': 10,
+      'icon': Icons.spa_outlined,
+      'color': Color(0xFF8B5CF6),
+    },
+    {
+      'title': 'Household Items',
+      'count': 10,
+      'icon': Icons.home_repair_service_outlined,
+      'color': Color(0xFF14B8A6),
+    },
+    {
+      'title': 'Others',
+      'count': 10,
+      'icon': Icons.category_outlined,
+      'color': Color(0xFF64748B),
+    },
   ];
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _categories.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final category = _categories[index];
-        return _CategoryCard(
-          title: category['title'] as String,
-          count: category['count'] as int,
-          icon: category['icon'] as IconData,
-          onTap: () {Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => CategoryDetailPage(categoryName: category['title'] as String),
-    ),
-  );},
-        );
-      },
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
+      children: [
+        const Text(
+          "Inventory",
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          "Organize your household items by category",
+          style: TextStyle(
+            fontSize: 12,
+            color: AppColors.textSecondary,
+          ),
+        ),
+
+        const SizedBox(height: 18),
+
+        TextField(
+          decoration: InputDecoration(
+            hintText: "Search item or category",
+            prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+            filled: true,
+            fillColor: AppColors.surface,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 18),
+
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _categories.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.15,
+          ),
+          itemBuilder: (context, index) {
+            final category = _categories[index];
+
+            return _CategoryCard(
+              title: category['title'],
+              count: category['count'],
+              icon: category['icon'],
+              color: category['color'],
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CategoryDetailPage(
+                      categoryName: category['title'],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -42,71 +124,58 @@ class _CategoryCard extends StatelessWidget {
   final String title;
   final int count;
   final IconData icon;
+  final Color color;
   final VoidCallback onTap;
 
   const _CategoryCard({
     required this.title,
     required this.count,
     required this.icon,
+    required this.color,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(10),
+    return Card(
+      elevation: 0,
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                backgroundColor: color.withOpacity(0.12),
+                child: Icon(icon, color: color),
               ),
-              child: Icon(icon, color: AppColors.textPrimary, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$count items available in this category',
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              const Spacer(),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
               ),
-            ),
-            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                "$count items",
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
 import 'dashboard_page.dart';
-import 'statistics_page.dart';
-import 'scan_page.dart';
 import 'inventory_page.dart';
+import 'statistics_page.dart';
 import 'profile_page.dart';
+import 'scan_page.dart';
 import 'notification_page.dart';
+import 'shopping_list_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -17,116 +18,130 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
 
-  void _openScan() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanPage()));
-    setState(() {});
-  }
+  final pages = const [
+    DashboardPage(),
+    InventoryPage(),
+    ShoppingListPage(),
+    StatisticsPage(),
+    ProfilePage(),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      const DashboardPage(),
-      const InventoryPage(),
-      const StatisticsPage(),
-      const ProfilePage(),
-    ];
-
     return Scaffold(
       backgroundColor: AppColors.background,
+
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
         title: const Text(
           "Easy Inventory",
           style: TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        bottom: _currentIndex == 3
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(
-                  color: AppColors.background,
-                  height: 1,
-                ),
-              )
-            : null,
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
+            icon: const Icon(
+              Icons.notifications_outlined,
+              color: AppColors.textPrimary,
+            ),
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const NotificationPage()),
+                MaterialPageRoute(
+                  builder: (_) => const NotificationPage(),
+                ),
               );
             },
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          pages[_currentIndex],
-          if (_currentIndex == 0)
-            Positioned(
-              bottom: 16,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: ElevatedButton.icon(
-                  onPressed: _openScan,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                    elevation: 4,
-                  ),
-                  icon: const Icon(Icons.receipt_long_outlined, color: AppColors.surface, size: 20),
-                  label: const Text(
-                    "+ Scan Receipt",
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.surface,
-                    ),
-                  ),
-                ),
+
+      body: pages[_currentIndex],
+
+      floatingActionButton: _currentIndex == 0
+          ? FloatingActionButton.extended(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ScanPage(),
+            ),
+          );
+        },
+        icon: const Icon(Icons.receipt_long_outlined),
+        label: const Text("Scan"),
+      )
+          : null,
+
+      bottomNavigationBar: Container(
+        height: 70,
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 8,
+              offset: Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            _navItem(0, Icons.dashboard_outlined, "Dashboard"),
+            _navItem(1, Icons.inventory_2_outlined, "Inventory"),
+            _navItem(2, Icons.shopping_cart_outlined, "List"),
+            _navItem(3, Icons.bar_chart_outlined, "Statistics"),
+            _navItem(4, Icons.person_outline, "Profile"),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navItem(int index, IconData icon, String label) {
+    final active = _currentIndex == index;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _currentIndex = index),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              height: 4,
+              width: active ? 26 : 0,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(20),
               ),
             ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        backgroundColor: AppColors.surface,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: AppColors.textSecondary,
-        selectedLabelStyle: const TextStyle(fontFamily: 'Poppins', fontSize: 11),
-        unselectedLabelStyle: const TextStyle(fontFamily: 'Poppins', fontSize: 11),
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_outlined),
-            activeIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.inventory_2_outlined),
-            activeIcon: Icon(Icons.inventory_2),
-            label: 'Inventory',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bar_chart_outlined),
-            activeIcon: Icon(Icons.bar_chart),
-            label: 'Statistik',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Profil',
-          ),
-        ],
+            const SizedBox(height: 8),
+            Icon(
+              icon,
+              color: active
+                  ? AppColors.primary
+                  : AppColors.textSecondary,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight:
+                active ? FontWeight.w600 : FontWeight.w400,
+                color: active
+                    ? AppColors.primary
+                    : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

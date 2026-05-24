@@ -5,65 +5,121 @@ class BudgetCard extends StatelessWidget {
   final int total;
   final int recommended;
 
-  const BudgetCard({super.key, required this.total, required this.recommended});
+  const BudgetCard({
+    super.key,
+    required this.total,
+    required this.recommended,
+  });
 
-  String _fmt(int v) => v.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]}.');
+  bool get isOver => total > recommended;
+  int get difference => (total - recommended).abs();
 
-  bool get _isOver => total > recommended;
-  int get _selisih => (total - recommended).abs();
-  double get _ratio => (recommended > 0 ? total / recommended : 0.0).clamp(0.0, 1.0);
+  double get progress {
+    if (recommended == 0) return 0;
+    return (total / recommended).clamp(0.0, 1.0);
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final color = _isOver ? AppColors.danger : AppColors.primary;
-    return Container(
-      width: double.infinity, padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface, borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(Icons.savings_outlined, color: color, size: 18),
-          const SizedBox(width: 6),
-          Text('Rekomendasi Budget', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, fontSize: 13, color: color)),
-        ]),
-        const SizedBox(height: 10),
-        Text('Rp${_fmt(recommended)}', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w700, fontSize: 20, color: _isOver ? AppColors.danger : AppColors.textPrimary)),
-        const SizedBox(height: 4),
-        const Text('Berdasarkan rata-rata bulan sebelumnya', style: TextStyle(fontFamily: 'Poppins', fontSize: 11, color: AppColors.textSecondary)),
-        const SizedBox(height: 12),
-
-        // Progress bar
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: Stack(children: [
-            Container(height: 8, color: AppColors.background),
-            FractionallySizedBox(
-              widthFactor: _ratio,
-              child: Container(height: 8, color: _isOver ? AppColors.danger : AppColors.primary),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 6),
-
-        // Warning / hemat
-        if (_isOver)
-          _banner('Pengeluaran melebihi rekomendasi Rp${_fmt(_selisih)}. Coba lebih hemat!', AppColors.danger)
-        else
-          Text('Hemat Rp${_fmt(_selisih)} dari rekomendasi', style: const TextStyle(fontFamily: 'Poppins', fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.primary)),
-      ]),
+  String _fmt(int value) {
+    return value.toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+$)'),
+          (m) => '${m[1]}.',
     );
   }
 
-  Widget _banner(String msg, Color color) => Container(
-    margin: const EdgeInsets.only(top: 4),
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
-    child: Row(children: [
-      Icon(Icons.warning_amber_rounded, color: color, size: 16),
-      const SizedBox(width: 8),
-      Expanded(child: Text(msg, style: TextStyle(fontFamily: 'Poppins', fontSize: 11, color: color))),
-    ]),
-  );
+  @override
+  Widget build(BuildContext context) {
+    final color = isOver ? AppColors.danger : AppColors.primary;
+
+    return Card(
+      elevation: 0,
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.savings_outlined, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  'Budget Recommendation',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Text(
+              'Rp ${_fmt(recommended)}',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+
+            const SizedBox(height: 4),
+
+            const Text(
+              'Based on previous monthly average',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(20),
+              color: color,
+              backgroundColor: color.withOpacity(0.12),
+            ),
+
+            const SizedBox(height: 10),
+
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isOver
+                        ? Icons.warning_amber_rounded
+                        : Icons.check_circle_outline,
+                    color: color,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isOver
+                          ? 'Over recommendation by Rp ${_fmt(difference)}'
+                          : 'Saved Rp ${_fmt(difference)} from recommendation',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

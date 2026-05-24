@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
-import '../data/app_data.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -10,208 +9,531 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final _nameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  String _name = '', _email = '';
-  bool _isEditing = false;
+  final nameC = TextEditingController(text: 'Dwiky Putra Dachi');
+  final emailC = TextEditingController(text: 'dwiky@email.com');
 
-  bool get _budgetEnabled => AppData().budgetRecommendationEnabled;
+  String name = 'Dwiky Putra Dachi';
+  String email = 'dwiky@email.com';
+  bool isEditing = false;
 
   @override
-  void dispose() { _nameCtrl.dispose(); _emailCtrl.dispose(); super.dispose(); }
-
-  void _snack(String msg, Color color) => ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg, style: const TextStyle(fontFamily: 'Poppins')), backgroundColor: color));
-
-  void _onChangePhoto() => showModalBottomSheet(
-    context: context, backgroundColor: AppColors.surface,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-    builder: (_) => Padding(padding: const EdgeInsets.all(20),
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Change Photo', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.textPrimary)),
-        const SizedBox(height: 16),
-        _sheetItem(Icons.camera_alt_outlined, 'Take a Photo', AppColors.textPrimary),
-        const SizedBox(height: 12),
-        _sheetItem(Icons.photo_library_outlined, 'Choose from Gallery', AppColors.textPrimary),
-        const SizedBox(height: 12),
-        _sheetItem(Icons.delete_outline, 'Remove Photo', AppColors.danger),
-        const SizedBox(height: 8),
-      ]),
-    ),
-  );
-
-  void _onChangePassword() {
-    final oldC = TextEditingController(), newC = TextEditingController(), confC = TextEditingController();
-    bool v1 = false, v2 = false, v3 = false;
-    showDialog(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, set) => AlertDialog(
-      backgroundColor: AppColors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      title: const Text('Change Password', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.textPrimary)),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        _passField(oldC, 'Current Password', v1, () => set(() => v1 = !v1)),
-        const SizedBox(height: 12),
-        _passField(newC, 'New Password', v2, () => set(() => v2 = !v2)),
-        const SizedBox(height: 12),
-        _passField(confC, 'Confirm New Password', v3, () => set(() => v3 = !v3)),
-        const SizedBox(height: 8),
-        const Align(alignment: Alignment.centerLeft,
-          child: Text('• Min. 8 characters\n• Use letters and numbers',
-              style: TextStyle(fontFamily: 'Poppins', fontSize: 11, color: AppColors.textSecondary, height: 1.6))),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(fontFamily: 'Poppins', color: AppColors.textSecondary))),
-        ElevatedButton(
-          onPressed: () {
-            if (newC.text != confC.text) { _snack('Passwords do not match.', AppColors.danger); return; }
-            if (newC.text.length < 8) { _snack('Min. 8 characters.', AppColors.warning); return; }
-            Navigator.pop(ctx);
-            _snack('Password changed!', AppColors.primary);
-          },
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-          child: const Text('Save', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppColors.surface)),
-        ),
-      ],
-    )));
+  void dispose() {
+    nameC.dispose();
+    emailC.dispose();
+    super.dispose();
   }
 
-  Widget _sheetItem(IconData icon, String label, Color color) => GestureDetector(
-    onTap: () => Navigator.pop(context),
-    child: Row(children: [Icon(icon, color: color, size: 22), const SizedBox(width: 12), Text(label, style: TextStyle(fontFamily: 'Poppins', fontSize: 14, color: color))]),
-  );
+  void _saveProfile() {
+    setState(() {
+      name = nameC.text.trim();
+      email = emailC.text.trim();
+      isEditing = false;
+    });
 
-  Widget _passField(TextEditingController c, String label, bool vis, VoidCallback toggle) => TextField(
-    controller: c, obscureText: !vis,
-    style: const TextStyle(fontFamily: 'Poppins', fontSize: 13, color: AppColors.textPrimary),
-    decoration: InputDecoration(
-      labelText: label, labelStyle: const TextStyle(fontFamily: 'Poppins', fontSize: 12, color: AppColors.textSecondary),
-      filled: true, fillColor: AppColors.background,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-      suffixIcon: IconButton(icon: Icon(vis ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: AppColors.textSecondary), onPressed: toggle),
-    ),
-  );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Profile saved'),
+        backgroundColor: AppColors.primary,
+      ),
+    );
+  }
 
-  Widget _infoRow(IconData icon, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(children: [Icon(icon, size: 18, color: AppColors.primary), const SizedBox(width: 10),
-      Text(value.isNotEmpty ? value : '-', style: const TextStyle(fontFamily: 'Poppins', fontSize: 14, color: AppColors.textPrimary))]),
-  );
-
-  Widget _field(String label, TextEditingController c, String hint, IconData icon, {TextInputType kb = TextInputType.text}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontFamily: 'Poppins', fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
-      const SizedBox(height: 6),
-      TextField(controller: c, keyboardType: kb,
-        style: const TextStyle(fontFamily: 'Poppins', fontSize: 13, color: AppColors.textPrimary),
-        decoration: InputDecoration(hintText: hint,
-          hintStyle: const TextStyle(fontFamily: 'Poppins', fontSize: 13, color: AppColors.textSecondary),
-          prefixIcon: Icon(icon, size: 18, color: AppColors.textSecondary),
-          filled: true, fillColor: AppColors.background,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+  void _changePhoto() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Wrap(
+          runSpacing: 12,
+          children: [
+            const Text(
+              'Change Photo',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            _sheetItem(Icons.camera_alt_outlined, 'Take Photo'),
+            _sheetItem(Icons.photo_library_outlined, 'Choose from Gallery'),
+            _sheetItem(Icons.delete_outline, 'Remove Photo', danger: true),
+          ],
         ),
       ),
-    ]),
-  );
+    );
+  }
 
-  Widget _section(String title, Widget child) => Container(
-    color: AppColors.surface, width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: const TextStyle(fontFamily: 'Poppins', fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.8)),
-      const Divider(height: 16, color: AppColors.background),
-      child, const SizedBox(height: 8),
-    ]),
-  );
+  void _changePassword() {
+    final currentC = TextEditingController();
+    final newC = TextEditingController();
+    final confirmC = TextEditingController();
+
+    bool showCurrent = false;
+    bool showNew = false;
+    bool showConfirm = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.textSecondary.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  const Text(
+                    'Change Password',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  const Text(
+                    'Use a strong password to keep your account secure.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  _passwordField(
+                    currentC,
+                    'Current Password',
+                    showCurrent,
+                        () => setSheetState(() => showCurrent = !showCurrent),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _passwordField(
+                    newC,
+                    'New Password',
+                    showNew,
+                        () => setSheetState(() => showNew = !showNew),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _passwordField(
+                    confirmC,
+                    'Confirm Password',
+                    showConfirm,
+                        () => setSheetState(() => showConfirm = !showConfirm),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: AppColors.primary,
+                          size: 18,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Password should contain at least 8 characters.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () {
+                        if (newC.text.length < 8) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Password must be at least 8 characters'),
+                              backgroundColor: AppColors.warning,
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (newC.text != confirmC.text) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Password does not match'),
+                              backgroundColor: AppColors.danger,
+                            ),
+                          );
+                          return;
+                        }
+
+                        Navigator.pop(context);
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Password updated'),
+                            backgroundColor: AppColors.primary,
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        'Save Password',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _passwordField(
+      TextEditingController controller,
+      String hint,
+      bool visible,
+      VoidCallback toggle,
+      ) {
+    return TextField(
+      controller: controller,
+      obscureText: !visible,
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: const Icon(Icons.lock_outline, color: AppColors.primary),
+        suffixIcon: IconButton(
+          icon: Icon(
+            visible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+            color: AppColors.textSecondary,
+          ),
+          onPressed: toggle,
+        ),
+        filled: true,
+        fillColor: AppColors.background,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+  Widget _sheetItem(IconData icon, String text, {bool danger = false}) {
+    final color = danger ? AppColors.danger : AppColors.textPrimary;
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: color),
+      title: Text(text, style: TextStyle(color: color)),
+      onTap: () => Navigator.pop(context),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(child: Column(children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
+      children: [
+        _profileHeader(),
+        const SizedBox(height: 20),
 
-      // Photo + name
-      Container(width: double.infinity, color: AppColors.surface, padding: const EdgeInsets.symmetric(vertical: 28),
-        child: Column(children: [
-          GestureDetector(onTap: _onChangePhoto,
-            child: Stack(children: [
-              Container(width: 90, height: 90,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.background, border: Border.all(color: AppColors.primary, width: 2)),
-                child: const Icon(Icons.person, size: 48, color: AppColors.textSecondary)),
-              Positioned(bottom: 0, right: 0, child: Container(padding: const EdgeInsets.all(5),
-                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                child: const Icon(Icons.camera_alt, size: 14, color: AppColors.surface))),
-            ]),
+        _sectionTitle('Personal Info'),
+        const SizedBox(height: 10),
+        _personalInfoCard(),
+
+        const SizedBox(height: 20),
+
+        _sectionTitle('Security'),
+        const SizedBox(height: 10),
+        _menuTile(
+          icon: Icons.lock_outline,
+          title: 'Change Password',
+          subtitle: 'Update your account password',
+          onTap: _changePassword,
+        ),
+
+        const SizedBox(height: 20),
+
+        _sectionTitle('App Settings'),
+        const SizedBox(height: 10),
+        _budgetSettingTile(),
+
+        const SizedBox(height: 24),
+
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.danger,
+            padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          const SizedBox(height: 10),
-          Text(_name.isNotEmpty ? _name : 'Your Name',
-            style: TextStyle(fontFamily: 'Poppins', fontSize: 16, fontWeight: FontWeight.w600,
-                color: _name.isNotEmpty ? AppColors.textPrimary : AppColors.textSecondary)),
-          const SizedBox(height: 4),
-          Text(_email.isNotEmpty ? _email : 'your@email.com',
-            style: const TextStyle(fontFamily: 'Poppins', fontSize: 13, color: AppColors.textSecondary)),
-        ]),
-      ),
+          onPressed: () {},
+          icon: const Icon(Icons.logout, color: Colors.white),
+          label: const Text(
+            'Logout',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
 
-      const SizedBox(height: 8),
-
-      // Personal Info
-      Container(color: AppColors.surface, padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('PERSONAL INFO', style: TextStyle(fontFamily: 'Poppins', fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.8)),
+  Widget _profileHeader() {
+    return Card(
+      elevation: 0,
+      color: AppColors.primary,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
             GestureDetector(
-              onTap: () => setState(() { _isEditing = !_isEditing; _nameCtrl.text = _name; _emailCtrl.text = _email; }),
-              child: Text(_isEditing ? 'Cancel' : 'Edit', style: const TextStyle(fontFamily: 'Poppins', fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.primary)),
+              onTap: _changePhoto,
+              child: Stack(
+                children: [
+                  const CircleAvatar(
+                    radius: 42,
+                    backgroundColor: Colors.white24,
+                    child: Icon(Icons.person, size: 46, color: Colors.white),
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: AppColors.surface,
+                      child: Icon(
+                        Icons.camera_alt,
+                        size: 14,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ]),
-          const Divider(height: 16, color: AppColors.background),
-          if (_isEditing) ...[
-            _field('Name', _nameCtrl, 'Enter your full name', Icons.person_outline),
-            _field('Email', _emailCtrl, 'Enter your email', Icons.email_outlined, kb: TextInputType.emailAddress),
             const SizedBox(height: 12),
-            SizedBox(width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => setState(() { _name = _nameCtrl.text.trim(); _email = _emailCtrl.text.trim(); _isEditing = false; _snack('Profile saved!', AppColors.primary); }),
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(vertical: 14)),
-                child: const Text('Save Changes', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppColors.surface)),
-              )),
-          ] else ...[
-            _infoRow(Icons.person_outline, _name),
-            _infoRow(Icons.email_outlined, _email),
+            Text(
+              name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              email,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
           ],
-          const SizedBox(height: 8),
-        ]),
+        ),
       ),
+    );
+  }
 
-      const SizedBox(height: 8),
+  Widget _personalInfoCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: isEditing ? _editForm() : _infoView(),
+      ),
+    );
+  }
 
-      // Password
-      _section('PASSWORD MANAGEMENT', SizedBox(width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: _onChangePassword,
-          icon: const Icon(Icons.lock_outline, size: 18, color: AppColors.textPrimary),
-          label: const Text('Change Password', style: TextStyle(fontFamily: 'Poppins', fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
-          style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.textSecondary),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(vertical: 14)),
+  Widget _infoView() {
+    return Column(
+      children: [
+        _infoRow(Icons.person_outline, 'Name', name),
+        const Divider(),
+        _infoRow(Icons.email_outlined, 'Email', email),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => setState(() => isEditing = true),
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Edit Profile'),
+          ),
         ),
-      )),
+      ],
+    );
+  }
 
-      const SizedBox(height: 8),
-
-      // App Settings — tulis & baca dari AppData
-      _section('APP SETTINGS', Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Budget Recommendation', style: TextStyle(fontFamily: 'Poppins', fontSize: 14, color: AppColors.textPrimary)),
-          const Text('Show monthly budget based on past spending', style: TextStyle(fontFamily: 'Poppins', fontSize: 11, color: AppColors.textSecondary)),
-        ])),
-        Switch(
-          value: _budgetEnabled,
-          onChanged: (v) => setState(() => AppData().budgetRecommendationEnabled = v),
-          activeColor: AppColors.primary,
+  Widget _editForm() {
+    return Column(
+      children: [
+        TextField(
+          controller: nameC,
+          decoration: _input('Name', Icons.person_outline),
         ),
-      ])),
+        const SizedBox(height: 12),
+        TextField(
+          controller: emailC,
+          decoration: _input('Email', Icons.email_outlined),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => setState(() => isEditing = false),
+                child: const Text('Cancel'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                onPressed: _saveProfile,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                ),
+                child: const Text('Save'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
-      const SizedBox(height: 24),
-    ]));
+  Widget _budgetSettingTile() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: SwitchListTile(
+        value: false,
+        onChanged: null,
+        secondary: CircleAvatar(
+          backgroundColor: AppColors.warning.withOpacity(0.12),
+          child: const Icon(Icons.savings_outlined, color: AppColors.warning),
+        ),
+        title: const Text(
+          'Enable Budget Recommendation',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: const Text(
+          'Coming soon: show monthly budget suggestion in statistics',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ListTile(
+        onTap: onTap,
+        leading: CircleAvatar(
+          backgroundColor: AppColors.primary.withOpacity(0.10),
+          child: Icon(icon, color: AppColors.primary),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, color: AppColors.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary)),
+              Text(value,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+
+  InputDecoration _input(String hint, IconData icon) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(icon, color: AppColors.primary),
+      filled: true,
+      fillColor: AppColors.background,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+    );
   }
 }
