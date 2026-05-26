@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
-import '../data/app_data.dart';
+import '../services/receipt_service.dart';
 
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
@@ -11,53 +11,48 @@ class ScanPage extends StatefulWidget {
 
 class _ScanPageState extends State<ScanPage> {
   bool _isScanning = false;
-  bool _hasResult = false;
+  bool _hasResult  = false;
+  bool _isSaving   = false;
 
+  // Dummy OCR result — nanti diganti Google ML Kit
   final List<Map<String, dynamic>> _scannedItems = [
-    {'name': 'Rice', 'price': 21500, 'category': 'Pantry'},
-    {'name': 'Eggs', 'price': 25000, 'category': 'Fresh Food'},
-    {'name': 'Drinks', 'price': 28000, 'category': 'Beverages'},
-    {'name': 'Dish Soap', 'price': 15000, 'category': 'Cleaning'},
-    {'name': 'Detergent', 'price': 17000, 'category': 'Cleaning'},
+    {'name': 'Rice',       'price': 21500, 'category': 'Pantry'},
+    {'name': 'Eggs',       'price': 25000, 'category': 'Fresh Food'},
+    {'name': 'Drinks',     'price': 28000, 'category': 'Beverages'},
+    {'name': 'Dish Soap',  'price': 15000, 'category': 'Cleaning Supplies'},
+    {'name': 'Detergent',  'price': 17000, 'category': 'Cleaning Supplies'},
   ];
 
   void _onScan() {
     setState(() => _isScanning = true);
-
+    // Simulasi OCR — nanti diganti ML Kit
     Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      setState(() {
-        _isScanning = false;
-        _hasResult = true;
-      });
+      if (mounted) setState(() { _isScanning = false; _hasResult = true; });
     });
   }
 
-  void _onSave() {
-    final items = _scannedItems.map((e) {
-      return InventoryItem(
-        name: e['name'],
-        category: e['category'],
-        price: e['price'],
-        scannedAt: DateTime.now(),
-      );
-    }).toList();
+  Future<void> _onSave() async {
+    setState(() => _isSaving = true);
+    final res = await ReceiptService.saveReceipt(_scannedItems);
+    setState(() => _isSaving = false);
 
-    AppData().addItems(items);
+    if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Items saved to inventory!"),
+    if (res['status'] == 'success') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Receipt berhasil disimpan!'),
         backgroundColor: AppColors.primary,
-      ),
-    );
-
-    Navigator.pop(context);
+      ));
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(res['message'] ?? 'Gagal menyimpan'),
+        backgroundColor: AppColors.danger,
+      ));
+    }
   }
 
-  int get _total {
-    return _scannedItems.fold(0, (sum, item) => sum + (item['price'] as int));
-  }
+  int get _total => _scannedItems.fold(0, (s, i) => s + (i['price'] as int));
 
   @override
   Widget build(BuildContext context) {
@@ -67,300 +62,151 @@ class _ScanPageState extends State<ScanPage> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          "Scan Receipt",
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
+        title: const Text("Scan Struk", style: TextStyle(
+          fontFamily: 'Poppins', fontWeight: FontWeight.w700, color: AppColors.textPrimary,
+        )),
       ),
-      body: ListView(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        children: [
-          const Text(
-            "OCR Scanner",
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            "Scan your receipt and turn it into inventory items.",
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
 
-          Container(
-            width: double.infinity,
-            height: 230,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: _isScanning ? AppColors.primary : Colors.transparent,
-                width: 2,
+            // Preview area
+            Container(
+              width: double.infinity, height: 220,
+              decoration: BoxDecoration(
+                color: AppColors.surface, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _isScanning ? AppColors.primary : Colors.transparent, width: 2),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+              child: _buildPreview(),
             ),
-            child: _buildPreview(),
-          ),
 
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _isScanning ? null : _onScan,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              icon: _isScanning
-                  ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-                  : const Icon(
-                Icons.document_scanner_outlined,
-                color: Colors.white,
-              ),
-              label: Text(
-                _isScanning ? "Scanning..." : "Auto Scan",
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-
-          if (_hasResult) ...[
-            const SizedBox(height: 24),
-
-            const Text(
-              "Detected Items",
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            ..._scannedItems.map((item) => _scannedTile(item)),
-
-            const SizedBox(height: 12),
-            _totalCard(),
-
-            const SizedBox(height: 20),
-
+            // Tombol scan
             SizedBox(
               width: double.infinity,
-              child: FilledButton(
-                onPressed: _onSave,
+              child: FilledButton.icon(
+                onPressed: _isScanning ? null : _onScan,
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                child: const Text(
-                  "Save to Inventory",
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                icon: _isScanning
+                    ? const SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.surface))
+                    : const Icon(Icons.document_scanner_outlined, color: AppColors.surface),
+                label: Text(
+                  _isScanning ? "Scanning..." : "Auto Scan",
+                  style: const TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppColors.surface),
                 ),
               ),
             ),
+
+            // Hasil scan
+            if (_hasResult) ...[
+              const SizedBox(height: 24),
+              const Text("Hasil Scan", style: TextStyle(
+                fontFamily: 'Poppins', fontWeight: FontWeight.w600,
+                fontSize: 15, color: AppColors.textPrimary,
+              )),
+              const SizedBox(height: 4),
+              const Text("Periksa kembali sebelum disimpan", style: TextStyle(
+                fontFamily: 'Poppins', fontSize: 12, color: AppColors.textSecondary,
+              )),
+              const SizedBox(height: 10),
+
+              ..._scannedItems.map((item) => _scannedTile(item)),
+
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Total", style: TextStyle(
+                    fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  Text("Rp $_total", style: const TextStyle(
+                    fontFamily: 'Poppins', fontWeight: FontWeight.w700, color: AppColors.primary)),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Tombol save — panggil backend di sini
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _isSaving ? null : _onSave,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: _isSaving
+                      ? const SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.surface))
+                      : const Text("Simpan ke Inventaris", style: TextStyle(
+                          fontFamily: 'Poppins', fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildPreview() {
-    if (_isScanning) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(
-                    color: AppColors.primary.withOpacity(0.3),
-                    width: 2,
-                  ),
-                ),
-              ),
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: -40, end: 40),
-                duration: const Duration(seconds: 1),
-                curve: Curves.easeInOut,
-                builder: (context, value, child) {
-                  return Transform.translate(
-                    offset: Offset(0, value),
-                    child: Container(
-                      width: 90,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          const Text(
-            "Scanning receipt...",
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-        ],
-      );
-    }
+    if (_isScanning) return const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      CircularProgressIndicator(color: AppColors.primary),
+      SizedBox(height: 12),
+      Text("Memproses struk...", style: TextStyle(fontFamily: 'Poppins', color: AppColors.textSecondary)),
+    ]);
 
-    if (_hasResult) {
-      return const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.check_circle_outline, color: AppColors.primary, size: 54),
-          SizedBox(height: 10),
-          Text(
-            "Scan completed",
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: AppColors.primary,
-            ),
-          ),
-          SizedBox(height: 4),
-          Text(
-            "Review detected items below",
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      );
-    }
+    if (_hasResult) return const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Icon(Icons.check_circle_outline, color: AppColors.primary, size: 48),
+      SizedBox(height: 8),
+      Text("Scan berhasil!", style: TextStyle(
+        fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppColors.primary)),
+    ]);
 
-    return const Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.receipt_long_outlined,
-          size: 54,
-          color: AppColors.textSecondary,
-        ),
-        SizedBox(height: 10),
-        Text(
-          "Scan your shopping receipt",
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        SizedBox(height: 4),
-        Text(
-          "Automatically detect items, prices, and categories",
-          style: TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
+    return const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Icon(Icons.receipt_long_outlined, size: 48, color: AppColors.textSecondary),
+      SizedBox(height: 8),
+      Text("Tekan Auto Scan untuk memindai struk", style: TextStyle(
+        fontFamily: 'Poppins', color: AppColors.textSecondary, fontSize: 13),
+        textAlign: TextAlign.center),
+    ]);
   }
 
   Widget _scannedTile(Map<String, dynamic> item) {
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: AppColors.primary.withOpacity(0.12),
-          child: const Icon(Icons.inventory_2_outlined, color: AppColors.primary),
-        ),
-        title: Text(
-          item['name'],
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        subtitle: Text(
-          item['category'],
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        trailing: Text(
-          "Rp ${item['price']}",
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _totalCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
-            "Estimated Total",
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(item['category'], style: const TextStyle(
+                fontFamily: 'Poppins', fontSize: 10,
+                color: AppColors.primary, fontWeight: FontWeight.w500)),
             ),
-          ),
-          Text(
-            "Rp $_total",
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: AppColors.primary,
-              fontSize: 18,
-            ),
-          ),
+            const SizedBox(width: 10),
+            Text(item['name'], style: const TextStyle(
+              fontFamily: 'Poppins', fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
+          ]),
+          Text("Rp ${item['price']}", style: const TextStyle(
+            fontFamily: 'Poppins', fontSize: 13, color: AppColors.textSecondary)),
         ],
       ),
     );

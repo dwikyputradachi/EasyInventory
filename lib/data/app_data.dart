@@ -17,18 +17,44 @@ class AppData {
   factory AppData() => _instance;
   AppData._internal();
 
-  final List<InventoryItem> inventory = [];
+  // ── Session user (diisi setelah login) ──
+  String token   = '';
+  int    userId  = 0;
+  String name    = '';
+  String email   = '';
 
-  // --- TAMBAHKAN INI ---
-  bool budgetRecommendationEnabled = false; 
-  // --------------------
+  bool get isLoggedIn => token.isNotEmpty;
 
-  void addItems(List<InventoryItem> items) {
-    inventory.addAll(items);
+  void setSession({
+    required String token,
+    required int userId,
+    required String name,
+    required String email,
+  }) {
+    this.token  = token;
+    this.userId = userId;
+    this.name   = name;
+    this.email  = email;
   }
 
-  void addItem(InventoryItem item) {
-    inventory.add(item);
+  void clearSession() {
+    token  = '';
+    userId = 0;
+    name   = '';
+    email  = '';
+    inventory.clear();
+  }
+
+  // ── Inventory sementara (nanti diganti dari API) ──
+  final List<InventoryItem> inventory = [];
+  bool budgetRecommendationEnabled = true;
+
+  void addItems(List<InventoryItem> items) => inventory.addAll(items);
+
+  String _monthLabel(DateTime date) {
+    const months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+    return '${months[date.month]} ${date.year}';
   }
 
   Map<String, int> get spendingPerMonth {
@@ -46,17 +72,5 @@ class AppData {
       result[item.category] = (result[item.category] ?? 0) + 1;
     }
     return result;
-  }
-
-  int get totalSpending {
-    return inventory.fold(0, (sum, item) => sum + item.price);
-  }
-
-  String _monthLabel(DateTime date) {
-    const months = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return '${months[date.month]} ${date.year}';
   }
 }
