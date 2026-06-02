@@ -12,7 +12,7 @@ $stmt->execute();
 $lists = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 foreach ($lists as &$list) {
-    $s = $db->prepare('SELECT id_shopping_item, name_item, quantity, unit, is_bought FROM shopping_list_items WHERE id_shopping_list = ?');
+    $s = $db->prepare('SELECT id_shopping_item, name_item, quantity, unit, priority, is_bought FROM shopping_list_items WHERE id_shopping_list = ?');
     $s->bind_param('i', $list['id_shopping_list']);
     $s->execute();
     $list['items'] = $s->get_result()->fetch_all(MYSQLI_ASSOC);
