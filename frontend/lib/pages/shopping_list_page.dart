@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
+import '../services/shopping_list_service.dart';
+import '../data/app_data.dart';
 
 class ShoppingListPage extends StatefulWidget {
   const ShoppingListPage({super.key});
@@ -9,15 +11,76 @@ class ShoppingListPage extends StatefulWidget {
 }
 
 class _ShoppingListPageState extends State<ShoppingListPage> {
-  final List<Map<String, dynamic>> items = [
-    {'name': 'Odol', 'qty': '1 pcs', 'priority': 'High', 'bought': false},
-    {'name': 'Beras', 'qty': '5 kg', 'priority': 'High', 'bought': true},
-    {'name': 'Telur', 'qty': '1 kg', 'priority': 'Medium', 'bought': false},
-    {'name': 'Sabun Cuci', 'qty': '1 pcs', 'priority': 'Low', 'bought': false},
-  ];
+  List<Map<String, dynamic>> items = [];
+  bool isLoading = true;
+  int? idShoppingList;
 
-  void _toggleBought(int index) {
-    setState(() => items[index]['bought'] = !items[index]['bought']);
+  @override
+  void initState() {
+    super.initState();
+    _loadShoppingList();
+  }
+
+  Future<void> _loadShoppingList() async {
+  try {
+    setState(() => isLoading = true);
+
+    final token = AppData().token;
+    print('SHOPPING TOKEN: $token');
+
+    final lists = await ShoppingListService.getShoppingLists();
+
+    if (lists.isEmpty) {
+      final newListId = await ShoppingListService.createShoppingList("My Shopping List");  
+      idShoppingList = newListId;
+      items = [];
+    } else {
+      final firstList = lists.first;
+
+      idShoppingList = int.parse(firstList['id_shopping_list'].toString());
+
+      final listItems = firstList['items'] ?? [];
+
+      items = List<Map<String, dynamic>>.from(
+        listItems.map((item) {
+          return {
+            'id_shopping_item': int.parse(item['id_shopping_item'].toString()),
+            'name': item['name_item'] ?? '',
+            'qty': '${item['quantity']} ${item['unit']}',
+            'quantity': int.parse(item['quantity'].toString()),
+            'unit': item['unit'] ?? 'pcs',
+            'priority': item['priority'] ?? 'Medium',
+            'bought': item['is_bought'].toString() == '1',
+          };
+        }),
+      );
+    }
+  } catch (e) {
+    _showError(e.toString());
+  } finally {
+    if (mounted) {
+      setState(() => isLoading = false);
+    }
+  }
+}
+
+  Future<void> _toggleBought(int index) async {
+    final oldValue = items[index]['bought'] == true;
+    final newValue = !oldValue;
+
+    setState(() {
+      items[index]['bought'] = newValue;
+    });
+
+    try {
+     await ShoppingListService.updateStatus(idShoppingItem: items[index]['id_shopping_item'], isBought: newValue);
+    } catch (e) {
+      setState(() {
+        items[index]['bought'] = oldValue;
+      });
+
+      _showError(e.toString());
+    }
   }
 
   void _showAddItemSheet() {
@@ -54,17 +117,23 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                       color: AppColors.textPrimary,
                     ),
                   ),
+
                   const SizedBox(height: 14),
+
                   TextField(
                     controller: nameController,
                     decoration: _inputDecoration("Item name"),
                   ),
+
                   const SizedBox(height: 12),
+
                   TextField(
                     controller: qtyController,
                     decoration: _inputDecoration("Quantity, e.g. 1 pcs"),
                   ),
+
                   const SizedBox(height: 12),
+
                   DropdownButtonFormField<String>(
                     value: priority,
                     decoration: _inputDecoration("Priority"),
@@ -77,7 +146,9 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                       setSheetState(() => priority = value!);
                     },
                   ),
+
                   const SizedBox(height: 16),
+
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
@@ -85,21 +156,30 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                         backgroundColor: AppColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      onPressed: () {
-                        if (nameController.text.isEmpty) return;
+                      onPressed: () async {
+                        if (nameController.text.trim().isEmpty) return;
 
-                        setState(() {
-                          items.add({
-                            'name': nameController.text,
-                            'qty': qtyController.text.isEmpty
-                                ? '1 pcs'
-                                : qtyController.text,
-                            'priority': priority,
-                            'bought': false,
-                          });
-                        });
+                        if (idShoppingList == null) {
+                          _showError('Shopping list not ready');
+                          return;
+                        }
 
-                        Navigator.pop(context);
+                        final qtyText = qtyController.text.trim();
+
+                        final quantity = _parseQuantity(qtyText);
+                        final unit = _parseUnit(qtyText);
+
+                        try {
+                          await ShoppingListService.addItem(idShoppingList: idShoppingList!, nameItem: nameController.text.trim(), quantity: quantity, unit: unit, priority: priority);   
+
+                          if (!mounted) return;
+
+                          Navigator.pop(context);
+
+                          await _loadShoppingList();
+                        } catch (e) {
+                          _showError(e.toString());
+                        }
                       },
                       child: const Text("Save Item"),
                     ),
@@ -111,6 +191,25 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
         );
       },
     );
+  }
+
+  int _parseQuantity(String value) {
+    if (value.isEmpty) return 1;
+
+    final parts = value.split(' ');
+    return int.tryParse(parts.first) ?? 1;
+  }
+
+  String _parseUnit(String value) {
+    if (value.isEmpty) return 'pcs';
+
+    final parts = value.split(' ');
+
+    if (parts.length >= 2) {
+      return parts.sublist(1).join(' ');
+    }
+
+    return 'pcs';
   }
 
   InputDecoration _inputDecoration(String hint) {
@@ -125,6 +224,17 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
     );
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final needToBuy = items.where((item) => item['bought'] == false).toList();
@@ -133,55 +243,68 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text(
-            "Shopping List",
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadShoppingList,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  const Text(
+                    "Shopping List",
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  const Text(
+                    "Plan what you need before shopping",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  _progressCard(boughtItems.length, items.length, progress),
+
+                  const SizedBox(height: 22),
+
+                  _sectionTitle("Need to Buy"),
+
+                  const SizedBox(height: 10),
+
+                  if (needToBuy.isEmpty)
+                    _emptyState("All items are bought 🎉")
+                  else
+                    ...needToBuy.map((item) {
+                      final realIndex = items.indexOf(item);
+                      return _shoppingTile(item, realIndex);
+                    }),
+
+                  if (boughtItems.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    _sectionTitle("Purchased"),
+                    const SizedBox(height: 10),
+                    ...boughtItems.map((item) {
+                      final realIndex = items.indexOf(item);
+                      return _shoppingTile(item, realIndex);
+                    }),
+                  ],
+
+                  const SizedBox(height: 90),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            "Plan what you need before shopping",
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 18),
-
-          _progressCard(boughtItems.length, items.length, progress),
-
-          const SizedBox(height: 22),
-          _sectionTitle("Need to Buy"),
-          const SizedBox(height: 10),
-
-          if (needToBuy.isEmpty)
-            _emptyState("All items are bought 🎉")
-          else
-            ...needToBuy.map((item) {
-              final realIndex = items.indexOf(item);
-              return _shoppingTile(item, realIndex);
-            }),
-
-          if (boughtItems.isNotEmpty) ...[
-            const SizedBox(height: 22),
-            _sectionTitle("Purchased"),
-            const SizedBox(height: 10),
-            ...boughtItems.map((item) {
-              final realIndex = items.indexOf(item);
-              return _shoppingTile(item, realIndex);
-            }),
-          ],
-
-          const SizedBox(height: 90),
-        ],
-      ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        onPressed: _showAddItemSheet,
+        onPressed: isLoading ? null : _showAddItemSheet,
         icon: const Icon(Icons.add),
         label: const Text("Add Item"),
       ),
@@ -199,7 +322,9 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Icon(Icons.shopping_cart_outlined, color: Colors.white),
+
             const SizedBox(height: 12),
+
             Text(
               "$bought of $total items bought",
               style: const TextStyle(
@@ -208,7 +333,9 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                 fontWeight: FontWeight.w700,
               ),
             ),
+
             const SizedBox(height: 10),
+
             LinearProgressIndicator(
               value: progress,
               color: Colors.white,

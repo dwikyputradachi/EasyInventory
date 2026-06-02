@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../data/app_data.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost/easy_inventory/api';
+  static const String baseUrl = 'http://192.168.100.15/easy_inventory/api';
 
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',

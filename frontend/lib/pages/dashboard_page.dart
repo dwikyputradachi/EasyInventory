@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../constants/colors.dart';
 import '../data/app_data.dart';
 import '../services/statistics_service.dart';
+import '../services/shopping_list_service.dart';
 
 class DashboardPage extends StatefulWidget {
   final VoidCallback? onOpenScan;
@@ -24,13 +25,22 @@ class _DashboardPageState extends State<DashboardPage> {
   int  _lastMonth = 0;
   bool _isLoading = true;
 
+  int _shoppingTotal = 0;
+  int _shoppingBought = 0;
+  bool _isShoppingLoading = true;
+
   @override
   void initState() {
     super.initState();
     _fetchSpending();
+    _fetchShoppingProgress();
   }
 
   Future<void> _fetchSpending() async {
+    if (AppData().token.isEmpty) {         // ← tambah ini
+      setState(() => _isLoading = false);
+      return;
+    }
     final res = await StatisticsService.getMonthlySpending(DateTime.now().year);
     if (res['status'] == 'success') {
       final monthly = List<Map<String, dynamic>>.from(res['data']['monthly'] ?? []);
@@ -51,6 +61,33 @@ class _DashboardPageState extends State<DashboardPage> {
       });
     } else {
       setState(() => _isLoading = false);
+    }
+  }
+  Future<void> _fetchShoppingProgress() async {
+    try {
+      if (AppData().token.isEmpty) {
+        setState(() => _isShoppingLoading = false);
+        return;
+      }
+
+      final lists = await ShoppingListService.getShoppingLists();
+
+      int total = 0, bought = 0;
+      for (final list in lists) {
+        final items = List<Map<String, dynamic>>.from(list['items'] ?? []);
+        for (final item in items) {
+          total++;
+          if (item['is_bought'].toString() == '1') bought++;
+        }
+      }
+
+      setState(() {
+        _shoppingTotal  = total;
+        _shoppingBought = bought;
+        _isShoppingLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isShoppingLoading = false);
     }
   }
 
@@ -179,21 +216,45 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _shoppingProgressCard() {
+Widget _shoppingProgressCard() {
+    final percent = _shoppingTotal == 0
+        ? 0
+        : ((_shoppingBought / _shoppingTotal) * 100).round();
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: AppColors.primary.withOpacity(0.12),
-          child: const Icon(Icons.shopping_bag_outlined, color: AppColors.primary),
+          child: const Icon(
+            Icons.shopping_bag_outlined,
+            color: AppColors.primary,
+          ),
         ),
-        title: const Text("Shopping Progress",
-            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-        subtitle: const Text("5 of 8 items purchased",
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        trailing: const Text("62%",
-            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.primary)),
+        title: const Text(
+          "Shopping Progress",
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          _isShoppingLoading
+              ? "Loading shopping progress..."
+              : "$_shoppingBought of $_shoppingTotal items purchased",
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        trailing: Text(
+          _isShoppingLoading ? "..." : "$percent%",
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: AppColors.primary,
+          ),
+        ),
       ),
     );
   }

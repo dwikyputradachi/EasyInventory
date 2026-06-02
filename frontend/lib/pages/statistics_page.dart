@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../constants/colors.dart';
 import '../services/statistics_service.dart';
 import 'statistics_detail_page.dart';
+import '../data/app_data.dart';
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -31,6 +32,11 @@ class _StatisticsPageState extends State<StatisticsPage> {
   }
 
   Future<void> _fetchData() async {
+    if (AppData().token.isEmpty) {        
+    setState(() => _isLoading = false);
+    return;
+   }
+
     setState(() => _isLoading = true);
     final res = await StatisticsService.getMonthlySpending(_selectedYear);
     if (res['status'] == 'success') {
