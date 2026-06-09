@@ -1,0 +1,93 @@
+> Task :gradle:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle:compileKotlin UP-TO-DATE
+> Task :gradle:compileJava NO-SOURCE
+> Task :gradle:compileGroovy NO-SOURCE
+> Task :gradle:pluginDescriptors UP-TO-DATE
+> Task :gradle:processResources UP-TO-DATE
+> Task :gradle:classes UP-TO-DATE
+> Task :gradle:jar UP-TO-DATE
+
+> Task :app:signingReport
+Variant: debug
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+Variant: release
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+Variant: profile
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+
+> Task :flutter_plugin_android_lifecycle:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+
+> Task :google_mlkit_commons:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+
+> Task :google_mlkit_text_recognition:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+
+> Task :google_sign_in_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+
+> Task :image_picker_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+
+> Task :mobile_scanner:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\remon\.android\debug.keystore
+Alias: AndroidDebugKey
+Error: Missing keystore
+----------
+
+[Incubating] Problems report is available at: file:///C:/xampp/htdocs/EasyInventory/frontend/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 7s
+11 actionable tasks: 7 executed, 4 up-to-date

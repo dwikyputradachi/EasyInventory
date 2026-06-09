@@ -1,20 +1,50 @@
 <?php
-require_once __DIR__ . '/../config/response.php';
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../config/auth_middleware.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') error('Method not allowed', 405);
+include_once '../config/response.php';
+include_once '../config/database.php';
 
-$user    = authenticate();
-$body    = bodyJson();
-$id_item = (int)($body['id_item'] ?? 0);
+/** @var mysqli $conn */
 
-if (!$id_item) error('id_item is required');
+$id_item = $_GET['id_item'] ?? null;
 
-$db   = getDB();
-$stmt = $db->prepare('DELETE FROM item WHERE id_item = ? AND id_user = ?');
-$stmt->bind_param('ii', $id_item, $user['id_user']);
-$stmt->execute();
-$db->close();
+if (!$id_item) {
+    echo json_encode([
+        "success" => false,
+        "message" => "id_item wajib diisi"
+    ]);
+    exit;
+}
 
-success(null, 'Item deleted');
+$checkItem = $conn->prepare("SELECT * FROM item WHERE id_item = ?");
+$checkItem->bind_param("i", $id_item);
+$checkItem->execute();
+
+if ($checkItem->get_result()->num_rows === 0) {
+    http_response_code(404);
+    echo json_encode([
+        "success" => false,
+        "message" => "Item tidak ditemukan"
+    ]);
+    exit;
+}
+
+// Hapus notifikasi yang berkaitan dengan item ini
+$deleteNotif = $conn->prepare("DELETE FROM notification WHERE id_item = ?");
+$deleteNotif->bind_param("i", $id_item);
+$deleteNotif->execute();
+
+// Hapus item
+$deleteItem = $conn->prepare("DELETE FROM item WHERE id_item = ?");
+$deleteItem->bind_param("i", $id_item);
+
+if ($deleteItem->execute()) {
+    echo json_encode([
+        "success" => true,
+        "message" => "Produk berhasil dihapus"
+    ]);
+} else {
+    echo json_encode([
+        "success" => false,
+        "message" => "Produk gagal dihapus"
+    ]);
+}

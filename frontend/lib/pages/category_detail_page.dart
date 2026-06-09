@@ -3,12 +3,17 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import '../constants/colors.dart';
 import '../models/product_model.dart';
 import 'product_detail_page.dart';
-import 'add_product_page.dart';
+import '../services/api_service.dart';
 
 class CategoryDetailPage extends StatefulWidget {
+  final int categoryId;
   final String categoryName;
 
-  const CategoryDetailPage({super.key, required this.categoryName});
+  const CategoryDetailPage({
+    super.key,
+    required this.categoryId,
+    required this.categoryName,
+  });
 
   @override
   State<CategoryDetailPage> createState() => _CategoryDetailPageState();
@@ -17,11 +22,27 @@ class CategoryDetailPage extends StatefulWidget {
 class _CategoryDetailPageState extends State<CategoryDetailPage> {
   late List<Product> _products;
   String _search = '';
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _products = DummyData.getProductsByCategory(widget.categoryName);
+    _products = [];
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    final data = await ApiService.getItemsByCategory(
+      widget.categoryId,
+      widget.categoryName,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _products = data;
+      _isLoading = false;
+    });
   }
 
   List<Product> get _filteredProducts {
@@ -38,94 +59,83 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
     return AppColors.primary;
   }
 
-  void _openAddProduct() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AddProductPage(categoryName: widget.categoryName),
-      ),
-    );
-
-    if (result != null && result is Product) {
-      setState(() => _products.add(result));
-    }
-  }
-
   void _openDetail(Product product) async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => ProductDetailPage(product: product)),
     );
 
-    if (result == 'deleted') {
-      setState(() => _products.remove(product));
-    } else if (result is Product) {
+    if (result == true || result == 'deleted') {
       setState(() {
-        final index = _products.indexOf(product);
-        if (index != -1) _products[index] = result;
+        _isLoading = true;
       });
+
+      await _loadProducts();
     }
   }
 
-  void _showDeleteDialog(Product product) {
+  Future<void> _showDeleteDialog(Product product) async {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Product'),
         content: const Text('Stock is 0. Do you want to delete this product?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() => _products.remove(product));
-              Navigator.pop(context);
-            },
-            child: const Text('Delete'),
-          ),
-        ],
+
       ),
     );
   }
 
-  void _increaseQty(Product p) {
+  Future<void> _increaseQty(Product p) async {
+    final newQty = p.quantity + 1;
+
     setState(() {
-      final index = _products.indexOf(p);
-      if (index != -1) {
-        _products[index] = p.copyWith(quantity: p.quantity + 1);
-      }
+      _isLoading = true;
     });
-  }
 
-  void _decreaseQty(Product p) {
-    final index = _products.indexOf(p);
+    final success = await ApiService.updateItemStock(p.id, newQty);
 
-    if (index != -1) {
-      if (p.quantity > 1) {
-        setState(() {
-          _products[index] = p.copyWith(quantity: p.quantity - 1);
-        });
-      } else {
-        _showDeleteDialog(p);
-      }
+    if (success) {
+      await _loadProducts();
+    } else {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update stock')),
+      );
     }
   }
 
-  Color _expiryColor(DateTime expiry) {
-    final diff = expiry.difference(DateTime.now()).inDays;
-    if (diff < 0) return AppColors.danger;
-    if (diff <= 3) return AppColors.warning;
-    return AppColors.primary;
-  }
+  Future<void> _decreaseQty(Product p) async {
+    if (p.quantity <= 1) {
+      _showDeleteDialog(p);
+      return;
+    }
 
-  String _expiryLabel(DateTime expiry) {
-    final diff = expiry.difference(DateTime.now()).inDays;
-    if (diff < 0) return 'Expired';
-    if (diff == 0) return 'Expires today';
-    if (diff <= 3) return 'Expires in $diff days';
-    return '${expiry.day}/${expiry.month}/${expiry.year}';
+    final newQty = p.quantity - 1;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final success = await ApiService.updateItemStock(p.id, newQty);
+
+    if (success) {
+      await _loadProducts();
+    } else {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update stock')),
+      );
+    }
   }
 
   @override
@@ -134,31 +144,27 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: AppColors.textPrimary, size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          widget.categoryName,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-            fontSize: 16,
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _openAddProduct,
-            icon: const Icon(Icons.add_circle_outline,
-                color: AppColors.primary),
-          ),
-        ],
-      ),
+appBar: AppBar(
+  backgroundColor: AppColors.surface,
+  elevation: 0,
+  centerTitle: true,
+  leading: IconButton(
+    icon: const Icon(
+      Icons.arrow_back_ios_new,
+      color: AppColors.textPrimary,
+      size: 18,
+    ),
+    onPressed: () => Navigator.pop(context, true),
+  ),
+  title: Text(
+    widget.categoryName,
+    style: const TextStyle(
+      fontWeight: FontWeight.w700,
+      color: AppColors.textPrimary,
+      fontSize: 16,
+    ),
+  ),
+),
       body: Column(
         children: [
           Padding(
@@ -177,61 +183,65 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
               ),
             ),
           ),
-
           Expanded(
-            child: _filteredProducts.isEmpty
-                ? _emptyState(color)
-                : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-              itemCount: _filteredProducts.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final p = _filteredProducts[index];
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredProducts.isEmpty
+                    ? _emptyState(color)
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                        itemCount: _filteredProducts.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          final p = _filteredProducts[index];
 
-                return Slidable(
-                  key: ValueKey(p.id),
-                  endActionPane: ActionPane(
-                    motion: const StretchMotion(),
-                    extentRatio: 0.48,
-                    children: [
-                      Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _qtyButton(
-                                Icons.remove,
-                                AppColors.danger,
-                                    () => _decreaseQty(p),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                '${p.quantity}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
+                          return Slidable(
+                            key: ValueKey(p.id),
+                            endActionPane: ActionPane(
+                              motion: const StretchMotion(),
+                              extentRatio: 0.48,
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        _qtyButton(
+                                          Icons.remove,
+                                          AppColors.danger,
+                                          () => _decreaseQty(p),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          '${p.quantity}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        _qtyButton(
+                                          Icons.add,
+                                          AppColors.primary,
+                                          () => _increaseQty(p),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 10),
-                              _qtyButton(
-                                Icons.add,
-                                AppColors.primary,
-                                    () => _increaseQty(p),
-                              ),
-                            ],
-                          ),
-                        ),
+                              ],
+                            ),
+                            child: _productCard(p, color),
+                          );
+                        },
                       ),
-                    ],
-                  ),
-                  child: _productCard(p, color),
-                );
-              },
-            ),
           ),
         ],
       ),
@@ -243,71 +253,28 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
       onTap: () => _openDetail(p),
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: color.withOpacity(0.12),
-              child: Icon(Icons.inventory_2_outlined, color: color),
-            ),
-            const SizedBox(width: 14),
-
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    p.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _badge(
-                        _expiryLabel(p.expiryDate),
-                        _expiryColor(p.expiryDate),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Stock: ${p.quantity} ${p.unit}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              child: Text(
+                p.name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                ),
               ),
             ),
-
-            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            const Icon(
+              Icons.chevron_right,
+              color: AppColors.textSecondary,
+            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _badge(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 11,
-          color: color,
-          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -330,8 +297,11 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.inventory_2_outlined,
-              size: 64, color: color.withOpacity(0.35)),
+          Icon(
+            Icons.inventory_2_outlined,
+            size: 64,
+            color: color.withOpacity(0.35),
+          ),
           const SizedBox(height: 12),
           const Text(
             'No product found',

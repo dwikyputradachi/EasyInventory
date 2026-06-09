@@ -1,33 +1,57 @@
 <?php
-require_once __DIR__ . '/../config/response.php';
-require_once __DIR__ . '/../config/database.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') error('Method not allowed', 405);
+include_once '../config/response.php';
+include_once '../config/database.php';
 
-$body  = bodyJson();
-$email = trim($body['email']    ?? '');
-$pass  = trim($body['password'] ?? '');
+/** @var mysqli $conn */
 
-if (!$email || !$pass) error('Email and password are required');
+$data = json_decode(file_get_contents("php://input"), true);
 
-$db   = getDB();
-$stmt = $db->prepare('SELECT id_user, name, email, password FROM users WHERE email = ?');
-$stmt->bind_param('s', $email);
+$email = $data['email'] ?? null;
+$password = $data['password'] ?? null;
+
+if (!$email || !$password) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Email dan password wajib diisi"
+    ]);
+    exit;
+}
+
+$stmt = $conn->prepare("
+    SELECT id_user, name, email, password, foto_profil, role, created_at, updated_at
+    FROM users
+    WHERE email = ?
+    LIMIT 1
+");
+
+$stmt->bind_param("s", $email);
 $stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
 
-if (!$user || !password_verify($pass, $user['password'])) error('Invalid email or password', 401);
+$result = $stmt->get_result();
 
-// Regenerate token setiap login
-$token = bin2hex(random_bytes(32));
-$stmt  = $db->prepare('UPDATE users SET token = ? WHERE id_user = ?');
-$stmt->bind_param('si', $token, $user['id_user']);
-$stmt->execute();
-$db->close();
+if ($result->num_rows === 0) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Email tidak ditemukan"
+    ]);
+    exit;
+}
 
-success([
-    'token' => $token,
-    'id_user' => $user['id_user'],
-    'name'  => $user['name'],
-    'email' => $user['email'],
-], 'Login successful');
+$user = $result->fetch_assoc();
+
+if (!password_verify($password, $user['password'])) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Password salah"
+    ]);
+    exit;
+}
+
+unset($user['password']);
+
+echo json_encode([
+    "success" => true,
+    "message" => "Login berhasil",
+    "data" => $user
+]);
