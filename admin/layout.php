@@ -45,11 +45,6 @@ function navLink($item, $active_menu, $badge = 0) {
 
     echo "<a href='{$item['href']}' class='$cls'>";
     echo "<i class='bi bi-{$item['icon']}'></i> {$item['label']}";
-
-    if (!empty($item['badge']) && $badge > 0) {
-        echo "<span class='badge-count'>$badge</span>";
-    }
-
     echo "</a>";
 }
 ?>
