@@ -72,18 +72,15 @@ class _LoginPageState extends State<LoginPage> {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 36,
-                  backgroundColor: AppColors.primary.withOpacity(0.12),
-                  child: const Icon(
-                    Icons.inventory_2_outlined,
-                    color: AppColors.primary,
-                    size: 36,
-                  ),
-                ),
+   Image.asset(
+  'assets/fonts/images/logo.png',
+  width: 145,
+  height: 145,
+  fit: BoxFit.contain,
+),
                 const SizedBox(height: 18),
                 const Text(
-                  "Welcome Back",
+                  "Welcome to Easy Inventory",
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w700,
