@@ -1,30 +1,23 @@
 <?php
+require_once __DIR__ . '/../config/response.php';
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/auth_middleware.php';
 
-include_once '../config/response.php';
-include_once '../config/database.php';
+$user = authenticate();
+$id_user = (int)$user['id_user'];
 
-/** @var mysqli $conn */
-
-$id_user = $_GET['id_user'] ?? null;
-
-if (!$id_user) {
-    echo json_encode([
-        "success" => false,
-        "message" => "id_user wajib diisi"
-    ]);
-    exit;
-}
+$db = getDB();
 
 $sql = "SELECT 
-            notification.*
-        FROM notification
-        INNER JOIN item 
-            ON notification.id_item = item.id_item
-        WHERE notification.is_read = 0
-        AND item.id_user = ?
-        ORDER BY notification.created_at DESC";
+            n.*
+        FROM notification n
+        INNER JOIN item i
+            ON n.id_item = i.id_item
+        WHERE n.is_read = 0
+        AND i.id_user = ?
+        ORDER BY n.created_at DESC";
 
-$stmt = $conn->prepare($sql);
+$stmt = $db->prepare($sql);
 $stmt->bind_param("i", $id_user);
 $stmt->execute();
 
@@ -35,8 +28,6 @@ while ($row = $result->fetch_assoc()) {
     $data[] = $row;
 }
 
-echo json_encode([
-    "success" => true,
-    "message" => "Notifications loaded",
-    "data" => $data
-]);
+$db->close();
+
+success($data, "Notifications loaded");

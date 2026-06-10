@@ -31,7 +31,7 @@ class AppData {
     profilePhoto = photo;
   }
 
-bool get isLoggedIn => userId != 0;
+  bool get isLoggedIn => token.isNotEmpty;
 
   void setSession({
     required String token,

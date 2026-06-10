@@ -122,9 +122,7 @@ class ApiService {
   // =====================================================
 
   static Future<List<dynamic>> getCategories() async {
-    final body = await get(
-      'category/get_categories.php?id_user=${AppData().userId}',
-    );
+    final body = await get('category/get_categories.php');
 
     return body['data'] ?? [];
   }
@@ -134,11 +132,11 @@ class ApiService {
   // =====================================================
 
   static Future<List<Product>> getItemsByCategory(
-    int categoryId,
-    String categoryName,
-  ) async {
+      int categoryId,
+      String categoryName,
+      ) async {
     final body = await get(
-      'item/get_items_by_category.php?id_category=$categoryId&id_user=${AppData().userId}',
+      'item/get_items_by_category.php?id_category=$categoryId',
     );
 
     final List data = body['data'] ?? [];
@@ -146,10 +144,10 @@ class ApiService {
     return data
         .map(
           (e) => Product.fromJson(
-            e,
-            category: categoryName,
-          ),
-        )
+        e,
+        category: categoryName,
+      ),
+    )
         .toList();
   }
 
@@ -209,8 +207,8 @@ class ApiService {
   // DASHBOARD
   // =====================================================
 
-  static Future<Map<String, dynamic>?> getDashboard(int idUser) async {
-    final body = await get('dashboard/dashboard.php?id_user=$idUser');
+  static Future<Map<String, dynamic>?> getDashboard() async {
+    final body = await get('dashboard/dashboard.php');
 
     if (body['status'] == 'success' || body['success'] == true) {
       return body['data'];
@@ -236,9 +234,7 @@ class ApiService {
   // =====================================================
 
   static Future<List<dynamic>> getNotifications() async {
-    final body = await get(
-      'notification/get_notifications.php?id_user=${AppData().userId}',
-    );
+    final body = await get('notification/get_notifications.php');
 
     return body['data'] ?? [];
   }

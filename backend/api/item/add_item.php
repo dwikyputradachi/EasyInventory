@@ -1,15 +1,18 @@
 <?php
+require_once __DIR__ . '/../config/response.php';
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/auth_middleware.php';
+require_once __DIR__ . '/../config/notification_helper.php';
 
-include_once '../config/response.php';
-include_once '../config/database.php';
-include_once '../config/notification_helper.php';
-/** @var mysqli $conn */
+$user = authenticate();
+$id_user = (int)$user['id_user'];
+
+$conn = getDB();
 
 $data = json_decode(file_get_contents("php://input"), true);
 
 $id_category  = $_GET['id_category'] ?? ($data['id_category'] ?? null);
-$id_user      = $data['id_user'] ?? null;
-$name         = $data['name'] ?? null;
+$name         = trim($data['name'] ?? '');
 $quantity     = $data['quantity'] ?? null;
 $stok         = $quantity;
 $price        = $data['price'] ?? 0;

@@ -39,7 +39,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> loadDashboard() async {
-    final result = await ApiService.getDashboard(AppData().userId);
+    final result = await ApiService.getDashboard();
 
     if (!mounted) return;
 
@@ -55,8 +55,10 @@ class _DashboardPageState extends State<DashboardPage> {
         _isSpendingLoading = true;
       });
 
+      final now = DateTime.now();
+
       final result = await ApiService.get(
-        'statistics/monthly_spending.php?id_user=${AppData().userId}',
+        'statistics/monthly_spending.php?year=${now.year}&month=${now.month}',
       );
 
       final data = result['data'];
@@ -66,7 +68,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
       if (data is Map<String, dynamic>) {
         thisMonth = _toInt(
-          data['this_month'] ??
+          data['month_total'] ??
+              data['this_month'] ??
               data['current_month'] ??
               data['total_this_month'] ??
               data['monthly_spending'] ??

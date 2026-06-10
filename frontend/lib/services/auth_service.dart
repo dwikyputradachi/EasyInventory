@@ -7,12 +7,14 @@ class AuthService {
     required String email,
     required String password,
   }) async {
-    return await ApiService.post('auth/register.php', {
+    final res = await ApiService.post('auth/register.php', {
       'name': name,
       'email': email,
       'password': password,
       'role': 'user',
     });
+
+    return res;
   }
 
   static Future<Map<String, dynamic>> login({
@@ -24,11 +26,11 @@ class AuthService {
       'password': password,
     });
 
-    if (res['success'] == true) {
+    if (res['status'] == 'success') {
       final data = res['data'];
 
       AppData().setSession(
-        token: 'logged_in',
+        token: data['token'] ?? '',
         userId: int.parse(data['id_user'].toString()),
         name: data['name'] ?? '',
         email: data['email'] ?? '',

@@ -1,66 +1,32 @@
 <?php
+require_once __DIR__ . '/../config/response.php';
+require_once __DIR__ . '/../config/database.php';
 
-include_once '../config/response.php';
-include_once '../config/database.php';
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') error('Method not allowed', 405);
 
-/** @var mysqli $conn */
+$body = bodyJson();
+$name  = trim($body['name']  ?? '');
+$email = trim($body['email'] ?? '');
+$pass  = trim($body['password'] ?? '');
 
-$data = json_decode(file_get_contents("php://input"), true);
+if (!$name || !$email || !$pass)   error('Name, email, and password are required');
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) error('Invalid email format');
+if (strlen($pass) < 8)             error('Password must be at least 8 characters');
 
-$name = $data['name'] ?? null;
-$email = $data['email'] ?? null;
-$password = $data['password'] ?? null;
-$role = $data['role'] ?? 'user';
+$db = getDB();
 
-if (!$name || !$email || !$password) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Name, email, dan password wajib diisi"
-    ]);
-    exit;
-}
-$check = $conn->prepare("SELECT id_user FROM users WHERE email = ? LIMIT 1");
-$check->bind_param("s", $email);
-$check->execute();
+// Cek email sudah terdaftar
+$stmt = $db->prepare('SELECT id_user FROM users WHERE email = ?');
+$stmt->bind_param('s', $email);
+$stmt->execute();
+if ($stmt->get_result()->num_rows > 0) error('Email already registered');
 
-if ($check->get_result()->num_rows > 0) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Email sudah terdaftar"
-    ]);
-    exit;
-}
+$hash  = password_hash($pass, PASSWORD_BCRYPT);
+$token = bin2hex(random_bytes(32));
 
-$hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+$stmt = $db->prepare('INSERT INTO users (name, email, password, token) VALUES (?, ?, ?, ?)');
+$stmt->bind_param('ssss', $name, $email, $hash, $token);
+$stmt->execute();
+$db->close();
 
-$stmt = $conn->prepare("
-    INSERT INTO users (name, email, password, foto_profil, role, created_at, updated_at)
-    VALUES (?, ?, ?, NULL, ?, NOW(), NOW())
-");
-
-$stmt->bind_param("ssss", $name, $email, $hashedPassword, $role);
-
-if (!$stmt->execute()) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Register gagal: " . $stmt->error
-    ]);
-    exit;
-}
-
-$id_user = $conn->insert_id;
-
-$get = $conn->prepare("
-    SELECT id_user, name, email, foto_profil, role, created_at, updated_at
-    FROM users
-    WHERE id_user = ?
-");
-
-$get->bind_param("i", $id_user);
-$get->execute();
-
-echo json_encode([
-    "success" => true,
-    "message" => "Register berhasil",
-    "data" => $get->get_result()->fetch_assoc()
-]);
+success(['token' => $token, 'name' => $name, 'email' => $email], 'Register successful');

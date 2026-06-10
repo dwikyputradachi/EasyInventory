@@ -1,21 +1,17 @@
 <?php
 
-$host = "localhost";
-$username = "root";
-$password = "";
-$database = "inventory_app";
+define('DB_HOST', 'localhost');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+define('DB_NAME', 'inventory_app');
 
-$conn = new mysqli(
-    $host,
-    $username,
-    $password,
-    $database
-);
-
-if ($conn->connect_error) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Database connection failed"
-    ]);
-    exit;
+function getDB() {
+    $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+    if ($conn->connect_error) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Database connection failed']);
+        exit;
+    }
+    $conn->set_charset('utf8mb4');
+    return $conn;
 }

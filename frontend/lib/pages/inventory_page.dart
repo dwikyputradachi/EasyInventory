@@ -206,6 +206,7 @@ class _InventoryPageState extends State<InventoryPage> {
           right: 16,
           bottom: 20,
           child: FloatingActionButton.extended(
+            heroTag: 'inventory_add_item_fab',
             backgroundColor: AppColors.primary,
             icon: const Icon(Icons.add, color: Colors.white),
             label: const Text(
