@@ -1,37 +1,104 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../data/app_data.dart';
 import '../models/product_model.dart';
 
 class ApiService {
-  static const String baseUrl =
-      'http://localhost/EasyInventory/backend/api';
+  static String get baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost/easy_inventory/api';
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2/easy_inventory/api';
+    }
+
+    return 'http://localhost/easy_inventory/api';
+  }
+
+  static Map<String, String> get _headers {
+    final token = '${AppData().token}';
+
+    return {
+      'Content-Type': 'application/json',
+      if (token.isNotEmpty && token != 'null') 'Authorization': 'Bearer $token',
+    };
+  }
 
   // =====================================================
   // GENERIC
   // =====================================================
 
   static Future<Map<String, dynamic>> get(String endpoint) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/$endpoint'),
-      headers: {'Content-Type': 'application/json'},
-    );
+    try {
+      final url = Uri.parse('$baseUrl/$endpoint');
 
-    return jsonDecode(res.body);
+      debugPrint('========== API GET ==========');
+      debugPrint('URL: $url');
+      debugPrint('TOKEN: ${AppData().token}');
+
+      final res = await http.get(url, headers: _headers);
+
+      debugPrint('STATUS: ${res.statusCode}');
+      debugPrint('BODY: ${res.body}');
+
+      if (res.body.isEmpty) {
+        return {
+          'status': 'error',
+          'message': 'Empty response from server',
+        };
+      }
+
+      return jsonDecode(res.body);
+    } catch (e) {
+      debugPrint('GET ERROR: $e');
+
+      return {
+        'status': 'error',
+        'message': 'Network/JSON error: $e',
+      };
+    }
   }
 
   static Future<Map<String, dynamic>> post(
     String endpoint,
     Map<String, dynamic> data,
   ) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/$endpoint'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(data),
-    );
+    try {
+      final url = Uri.parse('$baseUrl/$endpoint');
 
-    return jsonDecode(res.body);
+      debugPrint('========== API POST ==========');
+      debugPrint('URL: $url');
+      debugPrint('TOKEN: ${AppData().token}');
+      debugPrint('BODY SENT: $data');
+
+      final res = await http.post(
+        url,
+        headers: _headers,
+        body: jsonEncode(data),
+      );
+
+      debugPrint('STATUS: ${res.statusCode}');
+      debugPrint('BODY RESPONSE: ${res.body}');
+
+      if (res.body.isEmpty) {
+        return {
+          'status': 'error',
+          'message': 'Empty response from server',
+        };
+      }
+
+      return jsonDecode(res.body);
+    } catch (e) {
+      debugPrint('POST ERROR: $e');
+
+      return {
+        'status': 'error',
+        'message': 'Network/JSON error: $e',
+      };
+    }
   }
 
   // =====================================================
@@ -41,12 +108,9 @@ class ApiService {
   static Future<Map<String, dynamic>?> findProductByBarcode(
     String barcode,
   ) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/item/find_by_barcode.php?barcode=$barcode'),
-    );
+    final body = await get('item/find_by_barcode.php?barcode=$barcode');
 
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body);
+    if (body['status'] == 'success' || body['success'] == true) {
       return body['data'];
     }
 
@@ -58,18 +122,11 @@ class ApiService {
   // =====================================================
 
   static Future<List<dynamic>> getCategories() async {
-    final res = await http.get(
-      Uri.parse(
-        '$baseUrl/category/get_categories.php?id_user=${AppData().userId}',
-      ),
+    final body = await get(
+      'category/get_categories.php?id_user=${AppData().userId}',
     );
 
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body);
-      return body['data'] ?? [];
-    }
-
-    return [];
+    return body['data'] ?? [];
   }
 
   // =====================================================
@@ -80,44 +137,37 @@ class ApiService {
     int categoryId,
     String categoryName,
   ) async {
-    final res = await http.get(
-      Uri.parse(
-        '$baseUrl/item/get_items_by_category.php?id_category=$categoryId&id_user=${AppData().userId}',
-      ),
+    final body = await get(
+      'item/get_items_by_category.php?id_category=$categoryId&id_user=${AppData().userId}',
     );
 
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body);
-      final List data = body['data'] ?? [];
+    final List data = body['data'] ?? [];
 
-      return data
-          .map(
-            (e) => Product.fromJson(
-              e,
-              category: categoryName,
-            ),
-          )
-          .toList();
-    }
-
-    return [];
+    return data
+        .map(
+          (e) => Product.fromJson(
+            e,
+            category: categoryName,
+          ),
+        )
+        .toList();
   }
 
   static Future<bool> addItem(
     Map<String, dynamic> data, {
     int? categoryId,
   }) async {
-    final url = categoryId == null
-        ? '$baseUrl/item/add_item.php'
-        : '$baseUrl/item/add_item.php?id_category=$categoryId';
+    final endpoint = categoryId == null
+        ? 'item/add_item.php'
+        : 'item/add_item.php?id_category=$categoryId';
 
     final res = await http.post(
-      Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
+      Uri.parse('$baseUrl/$endpoint'),
+      headers: _headers,
       body: jsonEncode(data),
     );
 
-    return res.statusCode == 201;
+    return res.statusCode == 200 || res.statusCode == 201;
   }
 
   static Future<bool> updateItem(
@@ -126,7 +176,7 @@ class ApiService {
   ) async {
     final res = await http.put(
       Uri.parse('$baseUrl/item/update_item.php?id_item=$itemId'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _headers,
       body: jsonEncode(data),
     );
 
@@ -139,7 +189,7 @@ class ApiService {
   ) async {
     final res = await http.put(
       Uri.parse('$baseUrl/item/update_stock.php?id_item=$itemId'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _headers,
       body: jsonEncode({'quantity': quantity}),
     );
 
@@ -149,6 +199,7 @@ class ApiService {
   static Future<bool> deleteItem(String itemId) async {
     final res = await http.delete(
       Uri.parse('$baseUrl/item/delete_item.php?id_item=$itemId'),
+      headers: _headers,
     );
 
     return res.statusCode == 200;
@@ -159,12 +210,9 @@ class ApiService {
   // =====================================================
 
   static Future<Map<String, dynamic>?> getDashboard(int idUser) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/dashboard/dashboard.php?id_user=$idUser'),
-    );
+    final body = await get('dashboard/dashboard.php?id_user=$idUser');
 
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body);
+    if (body['status'] == 'success' || body['success'] == true) {
       return body['data'];
     }
 
@@ -172,14 +220,11 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>?> getStockHealth() async {
-    final res = await http.get(
-      Uri.parse(
-        '$baseUrl/dashboard/stock_health.php?id_user=${AppData().userId}',
-      ),
+    final body = await get(
+      'dashboard/stock_health.php?id_user=${AppData().userId}',
     );
 
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body);
+    if (body['status'] == 'success' || body['success'] == true) {
       return body['data'];
     }
 
@@ -191,24 +236,17 @@ class ApiService {
   // =====================================================
 
   static Future<List<dynamic>> getNotifications() async {
-    final res = await http.get(
-      Uri.parse(
-        '$baseUrl/notification/get_notifications.php?id_user=${AppData().userId}',
-      ),
+    final body = await get(
+      'notification/get_notifications.php?id_user=${AppData().userId}',
     );
 
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body);
-      return body['data'] ?? [];
-    }
-
-    return [];
+    return body['data'] ?? [];
   }
 
   static Future<bool> markNotificationAsRead(String id) async {
     final res = await http.put(
       Uri.parse('$baseUrl/notification/mark_read.php?id=$id'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _headers,
     );
 
     return res.statusCode == 200;
@@ -219,7 +257,7 @@ class ApiService {
       Uri.parse(
         '$baseUrl/notification/mark_all_read.php?id_user=${AppData().userId}',
       ),
-      headers: {'Content-Type': 'application/json'},
+      headers: _headers,
     );
 
     return res.statusCode == 200;

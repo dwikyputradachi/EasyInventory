@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+
 import '../constants/colors.dart';
 import '../services/api_service.dart';
 import '../pages/notification_page.dart';
@@ -22,12 +24,18 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   Map<String, dynamic>? dashboard;
+
   bool isLoading = true;
+  bool _isSpendingLoading = true;
+
+  int _thisMonth = 0;
+  String _spendingComparison = 'No spending data yet';
 
   @override
   void initState() {
     super.initState();
     loadDashboard();
+    loadMonthlySpending();
   }
 
   Future<void> loadDashboard() async {
@@ -41,12 +49,84 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
+  Future<void> loadMonthlySpending() async {
+    try {
+      setState(() {
+        _isSpendingLoading = true;
+      });
+
+      final result = await ApiService.get(
+        'statistics/monthly_spending.php?id_user=${AppData().userId}',
+      );
+
+      final data = result['data'];
+
+      int thisMonth = 0;
+      int lastMonth = 0;
+
+      if (data is Map<String, dynamic>) {
+        thisMonth = _toInt(
+          data['this_month'] ??
+              data['current_month'] ??
+              data['total_this_month'] ??
+              data['monthly_spending'] ??
+              data['total'],
+        );
+
+        lastMonth = _toInt(
+          data['last_month'] ??
+              data['previous_month'] ??
+              data['total_last_month'],
+        );
+      } else {
+        thisMonth = _toInt(result['total']);
+      }
+
+      String comparison = 'No spending data last month';
+
+      if (lastMonth > 0) {
+        final diff = thisMonth - lastMonth;
+        final percent = ((diff.abs() / lastMonth) * 100).round();
+
+        if (diff > 0) {
+          comparison = '$percent% higher than last month';
+        } else if (diff < 0) {
+          comparison = '$percent% lower than last month';
+        } else {
+          comparison = 'Same as last month';
+        }
+      } else if (thisMonth > 0) {
+        comparison = 'Spending recorded this month';
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _thisMonth = thisMonth;
+        _spendingComparison = comparison;
+        _isSpendingLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _thisMonth = 0;
+        _spendingComparison = 'Failed to load spending';
+        _isSpendingLoading = false;
+      });
+    }
+  }
+
   Future<void> refreshDashboard() async {
     setState(() {
       isLoading = true;
+      _isSpendingLoading = true;
     });
 
-    await loadDashboard();
+    await Future.wait([
+      loadDashboard(),
+      loadMonthlySpending(),
+    ]);
   }
 
   @override
@@ -57,15 +137,12 @@ class _DashboardPageState extends State<DashboardPage> {
       );
     }
 
-    final totalItems = dashboard?['total_items'] ?? 0;
-    final lowStock = dashboard?['low_stock'] ?? 0;
-    final expired = dashboard?['expired'] ?? 0;
+    final totalItems = _toInt(dashboard?['total_items']);
+    final lowStock = _toInt(dashboard?['low_stock']);
+    final expired = _toInt(dashboard?['expired']);
 
-    final notifications =
-        dashboard?['notifications'] as List<dynamic>? ?? [];
-
-    final previewNotifications =
-        notifications.take(3).toList();
+    final notifications = dashboard?['notifications'] as List<dynamic>? ?? [];
+    final previewNotifications = notifications.take(3).toList();
 
     return RefreshIndicator(
       onRefresh: refreshDashboard,
@@ -134,25 +211,26 @@ class _DashboardPageState extends State<DashboardPage> {
 
             const SizedBox(height: 8),
 
-Align(
-  alignment: Alignment.centerRight,
-  child: TextButton(
-    onPressed: () {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const NotificationPage(),
-        ),
-      );
-    },
-    child: const Text(
-      'View All',
-      style: TextStyle(
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  ),
-),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationPage(),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'View All',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+
             const SizedBox(height: 22),
             _title("Quick Actions"),
             const SizedBox(height: 10),
@@ -185,14 +263,18 @@ Align(
             Wrap(
               spacing: 10,
               runSpacing: 10,
-             children: const [
-  _CategoryChip("Fresh Food", Icons.eco, Color(0xFF22C55E)),
-  _CategoryChip("Pantry", Icons.kitchen, Color(0xFFF59E0B)),
-  _CategoryChip("Beverages", Icons.local_drink, Color(0xFF38BDF8)),
-  _CategoryChip("Toiletries", Icons.spa, Color(0xFF8B5CF6)),
-  _CategoryChip("Household Items", Icons.home_outlined, Color(0xFF6366F1)),
-  _CategoryChip("Others", Icons.category_outlined, Color(0xFF64748B)),
-],
+              children: const [
+                _CategoryChip("Fresh Food", Icons.eco, Color(0xFF22C55E)),
+                _CategoryChip("Pantry", Icons.kitchen, Color(0xFFF59E0B)),
+                _CategoryChip("Beverages", Icons.local_drink, Color(0xFF38BDF8)),
+                _CategoryChip("Toiletries", Icons.spa, Color(0xFF8B5CF6)),
+                _CategoryChip(
+                  "Household Items",
+                  Icons.home_outlined,
+                  Color(0xFF6366F1),
+                ),
+                _CategoryChip("Others", Icons.category_outlined, Color(0xFF64748B)),
+              ],
             ),
           ],
         ),
@@ -201,22 +283,25 @@ Align(
   }
 
   Widget _header() {
+    final name = AppData().name.isNotEmpty ? AppData().name : 'User';
+    final profileImagePath = AppData().profileImagePath;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-         Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Hi, ${AppData().name} 👋",
-              style: TextStyle(
+              "Hi, $name 👋",
+              style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
               ),
             ),
-            SizedBox(height: 4),
-            Text(
+            const SizedBox(height: 4),
+            const Text(
               "Let's manage your household smarter",
               style: TextStyle(
                 fontSize: 12,
@@ -226,8 +311,17 @@ Align(
           ],
         ),
         CircleAvatar(
+          radius: 22,
           backgroundColor: AppColors.primarySoft,
-          child: Icon(Icons.person_2_outlined, color: Colors.white),
+          backgroundImage: profileImagePath.isNotEmpty
+              ? FileImage(File(profileImagePath))
+              : null,
+          child: profileImagePath.isEmpty
+              ? const Icon(
+                  Icons.person_2_outlined,
+                  color: Colors.white,
+                )
+              : null,
         ),
       ],
     );
@@ -248,38 +342,55 @@ Align(
               child: Icon(Icons.insights_rounded, color: Colors.white),
             ),
             const SizedBox(width: 14),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Monthly Spending",
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  "Rp 420.000",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Monthly Spending",
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
+                  const SizedBox(height: 4),
+
+                  if (_isSpendingLoading)
+                    const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  else
+                    Text(
+                      "Rp ${_rupiah(_thisMonth)}",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _isSpendingLoading ? 'Loading...' : _spendingComparison,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                      ),
+                    ),
                   ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    "12% higher than last month",
-                    style: TextStyle(color: Colors.white, fontSize: 11),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -288,6 +399,32 @@ Align(
   }
 
   Widget _shoppingProgressCard() {
+    final progressData = dashboard?['shopping_progress'];
+
+    int purchased = 0;
+    int total = 0;
+
+    if (progressData is Map<String, dynamic>) {
+      purchased = _toInt(
+        progressData['purchased'] ??
+            progressData['completed'] ??
+            progressData['checked'],
+      );
+      total = _toInt(
+        progressData['total'] ??
+            progressData['total_items'] ??
+            progressData['all'],
+      );
+    } else {
+      purchased = _toInt(dashboard?['shopping_purchased']);
+      total = _toInt(dashboard?['shopping_total']);
+    }
+
+    final percent = total == 0 ? 0 : ((purchased / total) * 100).round();
+    final subtitle = total == 0
+        ? "No active shopping list"
+        : "$purchased of $total items purchased";
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -306,16 +443,16 @@ Align(
             color: AppColors.textPrimary,
           ),
         ),
-        subtitle: const Text(
-          "5 of 8 items purchased",
-          style: TextStyle(
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(
             fontSize: 12,
             color: AppColors.textSecondary,
           ),
         ),
-        trailing: const Text(
-          "62%",
-          style: TextStyle(
+        trailing: Text(
+          "$percent%",
+          style: const TextStyle(
             fontWeight: FontWeight.w700,
             color: AppColors.primary,
           ),
@@ -365,60 +502,59 @@ Align(
     );
   }
 
- Widget _stockHealthCard() {
-  final totalItems = dashboard?['total_items'] ?? 0;
-  final lowStock = dashboard?['low_stock'] ?? 0;
-  final expired = dashboard?['expired'] ?? 0;
+  Widget _stockHealthCard() {
+    final totalItems = _toInt(dashboard?['total_items']);
+    final lowStock = _toInt(dashboard?['low_stock']);
+    final expired = _toInt(dashboard?['expired']);
 
-  final healthy = totalItems - lowStock - expired;
+    final healthy = (totalItems - lowStock - expired).clamp(0, totalItems);
+    final healthyRatio = totalItems == 0 ? 0.0 : healthy / totalItems;
+    final lowStockRatio = totalItems == 0 ? 0.0 : lowStock / totalItems;
+    final expiredRatio = totalItems == 0 ? 0.0 : expired / totalItems;
 
-  final healthyRatio = totalItems == 0 ? 0.0 : healthy / totalItems;
-  final lowStockRatio = totalItems == 0 ? 0.0 : lowStock / totalItems;
-  final expiredRatio = totalItems == 0 ? 0.0 : expired / totalItems;
-
-  return Card(
-    elevation: 0,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Stock Health",
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          _ProgressRow(
-            "Available Stock ($healthy)",
-            healthyRatio,
-            AppColors.primary,
-          ),
-          const SizedBox(height: 14),
-
-          _ProgressRow(
-            "Low Stock ($lowStock)",
-            lowStockRatio,
-            AppColors.warning,
-          ),
-          const SizedBox(height: 14),
-
-          _ProgressRow(
-            "Expired ($expired)",
-            expiredRatio,
-            AppColors.danger,
-          ),
-        ],
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
       ),
-    ),
-  );
-}
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Stock Health",
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            _ProgressRow(
+              "Available Stock ($healthy)",
+              healthyRatio,
+              AppColors.primary,
+            ),
+            const SizedBox(height: 14),
+
+            _ProgressRow(
+              "Low Stock ($lowStock)",
+              lowStockRatio,
+              AppColors.warning,
+            ),
+            const SizedBox(height: 14),
+
+            _ProgressRow(
+              "Expired ($expired)",
+              expiredRatio,
+              AppColors.danger,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _attentionTile(
     String title,
@@ -522,6 +658,31 @@ Align(
       ),
     );
   }
+
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  String _rupiah(int value) {
+    final text = value.toString();
+    final buffer = StringBuffer();
+
+    for (int i = 0; i < text.length; i++) {
+      final reverseIndex = text.length - i;
+
+      buffer.write(text[i]);
+
+      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+
+    return buffer.toString();
+  }
 }
 
 class _ProgressRow extends StatelessWidget {
@@ -533,13 +694,15 @@ class _ProgressRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeValue = value.clamp(0.0, 1.0).toDouble();
+
     return Row(
       children: [
         Expanded(child: Text(title)),
         SizedBox(
           width: 120,
           child: LinearProgressIndicator(
-            value: value,
+            value: safeValue,
             minHeight: 8,
             borderRadius: BorderRadius.circular(20),
             backgroundColor: color.withOpacity(0.15),
