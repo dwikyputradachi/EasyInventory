@@ -3,6 +3,7 @@ import '../constants/colors.dart';
 import '../data/app_data.dart';
 import '../services/statistics_service.dart';
 import '../services/shopping_list_service.dart';
+import 'dart:io';
 
 class DashboardPage extends StatefulWidget {
   final VoidCallback? onOpenScan;
@@ -163,17 +164,34 @@ class _DashboardPageState extends State<DashboardPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text("Hi, $name 👋", style: const TextStyle(
-            fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary,
-          )),
-          const SizedBox(height: 4),
-          const Text("Let's manage your household smarter",
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        ]),
-        const CircleAvatar(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Hi, $name 👋",
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              "Let's manage your household smarter",
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+
+        CircleAvatar(
+          radius: 22,
           backgroundColor: AppColors.primarySoft,
-          child: Icon(Icons.person_2_outlined, color: Colors.white),
+          backgroundImage: AppData().profileImagePath.isNotEmpty
+              ? FileImage(File(AppData().profileImagePath))
+              : null,
+          child: AppData().profileImagePath.isEmpty
+              ? const Icon(Icons.person_2_outlined, color: Colors.white)
+              : null,
         ),
       ],
     );
@@ -187,7 +205,8 @@ class _DashboardPageState extends State<DashboardPage> {
         padding: const EdgeInsets.all(18),
         child: Row(children: [
           const CircleAvatar(
-            radius: 28, backgroundColor: Colors.white24,
+            radius: 28,
+            backgroundColor: Colors.white24,
             child: Icon(Icons.insights_rounded, color: Colors.white),
           ),
           const SizedBox(width: 14),

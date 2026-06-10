@@ -10,13 +10,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 function success($data = null, $message = 'OK') {
-    echo json_encode(['status' => 'success', 'message' => $message, 'data' => $data]);
+    echo json_encode([
+        'success' => true,
+        'status' => 'success',
+        'message' => $message,
+        'data' => $data
+    ]);
     exit;
 }
 
 function error($message = 'Error', $code = 400) {
     http_response_code($code);
-    echo json_encode(['status' => 'error', 'message' => $message]);
+    echo json_encode([
+        'success' => false,
+        'status' => 'error',
+        'message' => $message
+    ]);
     exit;
 }
 

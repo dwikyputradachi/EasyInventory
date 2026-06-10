@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
+import '../data/app_data.dart';
+import '../services/auth_service.dart';
+import '../services/profile_service.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -9,12 +14,32 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final nameC = TextEditingController(text: 'Dwiky Putra Dachi');
-  final emailC = TextEditingController(text: 'dwiky@email.com');
+  final nameC = TextEditingController();
+  final emailC = TextEditingController();
+  File? profileImage;
+  final ImagePicker _picker = ImagePicker();
 
-  String name = 'Dwiky Putra Dachi';
-  String email = 'dwiky@email.com';
+  String name = '';
+  String email = '';
+
   bool isEditing = false;
+  bool isLoading = true;
+  bool isSaving = false;
+  bool budgetEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    name = AppData().name;
+    email = AppData().email;
+    nameC.text = name;
+    emailC.text = email;
+    budgetEnabled = AppData().budgetRecommendationEnabled;
+    if (AppData().profileImagePath.isNotEmpty) {
+      profileImage = File(AppData().profileImagePath);
+    }
+    _loadProfile();
+  }
 
   @override
   void dispose() {
@@ -23,21 +48,92 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  void _saveProfile() {
-    setState(() {
-      name = nameC.text.trim();
-      email = emailC.text.trim();
-      isEditing = false;
-    });
+  Future<void> _loadProfile() async {
+    final res = await ProfileService.getProfile();
 
+    if (res['status'] == 'success') {
+      final data = res['data'];
+
+      setState(() {
+        name = data['name'] ?? '';
+        email = data['email'] ?? '';
+        nameC.text = name;
+        emailC.text = email;
+
+        AppData().setProfilePhoto(data['profile_photo'] ?? '');
+
+        isLoading = false;
+      });
+    } else {
+      setState(() => isLoading = false);
+      _showSnack(res['message'] ?? 'Failed to load profile', AppColors.danger);
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    final newName = nameC.text.trim();
+    final newEmail = emailC.text.trim();
+
+    if (newName.isEmpty || newEmail.isEmpty) {
+      _showSnack('Name and email cannot be empty', AppColors.warning);
+      return;
+    }
+
+    setState(() => isSaving = true);
+
+    final res = await ProfileService.updateProfile(
+      name: newName,
+      email: newEmail,
+    );
+
+    setState(() => isSaving = false);
+
+    if (res['status'] == 'success') {
+      setState(() {
+        name = newName;
+        email = newEmail;
+        isEditing = false;
+      });
+
+      _showSnack('Profile updated', AppColors.primary);
+    } else {
+      _showSnack(res['message'] ?? 'Failed to update profile', AppColors.danger);
+    }
+  }
+
+  void _logout() {
+    AuthService.logout();
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+  }
+
+  void _showSnack(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Profile saved'),
-        backgroundColor: AppColors.primary,
-      ),
+      SnackBar(content: Text(message), backgroundColor: color),
     );
   }
 
+  Future<void> _pickProfileImage(ImageSource source) async {
+    final picked = await _picker.pickImage(
+      source: source,
+      imageQuality: 70,
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      profileImage = File(picked.path);
+    });
+
+    AppData().profileImagePath = picked.path;
+
+    final res = await ProfileService.uploadPhoto(picked.path);
+
+    if (res['status'] == 'success') {
+      _showSnack('Profile photo uploaded', AppColors.primary);
+    } else {
+      _showSnack(res['message'] ?? 'Failed to upload photo', AppColors.danger);
+    }
+  }
   void _changePhoto() {
     showModalBottomSheet(
       context: context,
@@ -54,9 +150,33 @@ class _ProfilePageState extends State<ProfilePage> {
               'Change Photo',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
-            _sheetItem(Icons.camera_alt_outlined, 'Take Photo'),
-            _sheetItem(Icons.photo_library_outlined, 'Choose from Gallery'),
-            _sheetItem(Icons.delete_outline, 'Remove Photo', danger: true),
+            _sheetItem(
+              Icons.camera_alt_outlined,
+              'Take Photo',
+              onTap: () {
+                Navigator.pop(context);
+                _pickProfileImage(ImageSource.camera);
+              },
+            ),
+            _sheetItem(
+              Icons.photo_library_outlined,
+              'Choose from Gallery',
+              onTap: () {
+                Navigator.pop(context);
+                _pickProfileImage(ImageSource.gallery);
+              },
+            ),
+            _sheetItem(
+              Icons.delete_outline,
+              'Remove Photo',
+              danger: true,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => profileImage = null);
+                AppData().profileImagePath = '';
+                _showSnack('Profile photo removed', AppColors.danger);
+              },
+            ),
           ],
         ),
       ),
@@ -71,6 +191,7 @@ class _ProfilePageState extends State<ProfilePage> {
     bool showCurrent = false;
     bool showNew = false;
     bool showConfirm = false;
+    bool savingPassword = false;
 
     showModalBottomSheet(
       context: context,
@@ -82,6 +203,39 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (_) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            Future<void> savePassword() async {
+              if (currentC.text.isEmpty || newC.text.isEmpty || confirmC.text.isEmpty) {
+                _showSnack('All password fields are required', AppColors.warning);
+                return;
+              }
+
+              if (newC.text.length < 8) {
+                _showSnack('Password must be at least 8 characters', AppColors.warning);
+                return;
+              }
+
+              if (newC.text != confirmC.text) {
+                _showSnack('Password does not match', AppColors.danger);
+                return;
+              }
+
+              setSheetState(() => savingPassword = true);
+
+              final res = await ProfileService.changePassword(
+                oldPassword: currentC.text,
+                newPassword: newC.text,
+              );
+
+              setSheetState(() => savingPassword = false);
+
+              if (res['status'] == 'success') {
+                Navigator.pop(context);
+                _showSnack('Password updated', AppColors.primary);
+              } else {
+                _showSnack(res['message'] ?? 'Failed to update password', AppColors.danger);
+              }
+            }
+
             return Padding(
               padding: EdgeInsets.only(
                 left: 20,
@@ -102,9 +256,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 20),
-
                   const Text(
                     'Change Password',
                     style: TextStyle(
@@ -113,9 +265,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       color: AppColors.textPrimary,
                     ),
                   ),
-
                   const SizedBox(height: 4),
-
                   const Text(
                     'Use a strong password to keep your account secure.',
                     style: TextStyle(
@@ -123,7 +273,6 @@ class _ProfilePageState extends State<ProfilePage> {
                       color: AppColors.textSecondary,
                     ),
                   ),
-
                   const SizedBox(height: 18),
 
                   _passwordField(
@@ -159,11 +308,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                     child: const Row(
                       children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: AppColors.primary,
-                          size: 18,
-                        ),
+                        Icon(Icons.info_outline, color: AppColors.primary, size: 18),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -190,37 +335,17 @@ class _ProfilePageState extends State<ProfilePage> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed: () {
-                        if (newC.text.length < 8) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Password must be at least 8 characters'),
-                              backgroundColor: AppColors.warning,
-                            ),
-                          );
-                          return;
-                        }
-
-                        if (newC.text != confirmC.text) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Password does not match'),
-                              backgroundColor: AppColors.danger,
-                            ),
-                          );
-                          return;
-                        }
-
-                        Navigator.pop(context);
-
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Password updated'),
-                            backgroundColor: AppColors.primary,
-                          ),
-                        );
-                      },
-                      child: const Text(
+                      onPressed: savingPassword ? null : savePassword,
+                      child: savingPassword
+                          ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                          : const Text(
                         'Save Password',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
@@ -266,19 +391,31 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
   }
-  Widget _sheetItem(IconData icon, String text, {bool danger = false}) {
+
+  Widget _sheetItem(
+      IconData icon,
+      String text, {
+        bool danger = false,
+        VoidCallback? onTap,
+      }) {
     final color = danger ? AppColors.danger : AppColors.textPrimary;
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, color: color),
       title: Text(text, style: TextStyle(color: color)),
-      onTap: () => Navigator.pop(context),
+      onTap: onTap ?? () => Navigator.pop(context),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
       children: [
@@ -313,7 +450,7 @@ class _ProfilePageState extends State<ProfilePage> {
             backgroundColor: AppColors.danger,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          onPressed: () {},
+          onPressed: _logout,
           icon: const Icon(Icons.logout, color: Colors.white),
           label: const Text(
             'Logout',
@@ -337,10 +474,13 @@ class _ProfilePageState extends State<ProfilePage> {
               onTap: _changePhoto,
               child: Stack(
                 children: [
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 42,
                     backgroundColor: Colors.white24,
-                    child: Icon(Icons.person, size: 46, color: Colors.white),
+                    backgroundImage: profileImage != null ? FileImage(profileImage!) : null,
+                    child: profileImage == null
+                        ? const Icon(Icons.person, size: 46, color: Colors.white)
+                        : null,
                   ),
                   Positioned(
                     right: 0,
@@ -360,7 +500,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 12),
             Text(
-              name,
+              name.isNotEmpty ? name : 'User',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
@@ -368,7 +508,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
             Text(
-              email,
+              email.isNotEmpty ? email : '-',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ],
@@ -424,18 +564,36 @@ class _ProfilePageState extends State<ProfilePage> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () => setState(() => isEditing = false),
+                onPressed: isSaving
+                    ? null
+                    : () {
+                  nameC.text = name;
+                  emailC.text = email;
+                  setState(() => isEditing = false);
+                },
                 child: const Text('Cancel'),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: FilledButton(
-                onPressed: _saveProfile,
+                onPressed: isSaving ? null : _saveProfile,
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primary,
                 ),
-                child: const Text('Save'),
+                child: isSaving
+                    ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+                    : const Text(
+                  'Save',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ),
           ],
@@ -449,8 +607,18 @@ class _ProfilePageState extends State<ProfilePage> {
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: SwitchListTile(
-        value: false,
-        onChanged: null,
+        value: budgetEnabled,
+        onChanged: (value) {
+          setState(() => budgetEnabled = value);
+          AppData().budgetRecommendationEnabled = value;
+
+          _showSnack(
+            value
+                ? 'Budget recommendation enabled'
+                : 'Budget recommendation disabled',
+            AppColors.primary,
+          );
+        },
         secondary: CircleAvatar(
           backgroundColor: AppColors.warning.withOpacity(0.12),
           child: const Icon(Icons.savings_outlined, color: AppColors.warning),
@@ -459,9 +627,11 @@ class _ProfilePageState extends State<ProfilePage> {
           'Enable Budget Recommendation',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        subtitle: const Text(
-          'Coming soon: show monthly budget suggestion in statistics',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        subtitle: Text(
+          budgetEnabled
+              ? 'Budget suggestion is shown in statistics'
+              : 'Budget suggestion is hidden from statistics',
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ),
     );
@@ -501,11 +671,17 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textSecondary)),
-              Text(value,
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              Text(
+                value.isNotEmpty ? value : '-',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ],
           ),
         ),
