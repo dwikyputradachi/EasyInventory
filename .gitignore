@@ -49,3 +49,23 @@ frontend/build/
 frontend/.dart_tool/
 frontend/.flutter-plugins
 frontend/.flutter-plugins-dependencies
+
+# Flutter build/cache
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+# Flutter build/cache
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+# Flutter build/cache
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+frontend/ios/Runner/SceneDelegate.swift
