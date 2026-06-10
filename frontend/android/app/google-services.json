@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "529807846345",
+    "project_id": "easy-inventory-5b2f4",
+    "storage_bucket": "easy-inventory-5b2f4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:529807846345:android:699c3b7ae5df59bfaa1618",
+        "android_client_info": {
+          "package_name": "com.example.easy_inventory"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "529807846345-icv1aeksnndnhct0bu01bi95glpd8lqt.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfWn4DlrAkpTIkSArjodmTbvRC4UfUnj4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "529807846345-icv1aeksnndnhct0bu01bi95glpd8lqt.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

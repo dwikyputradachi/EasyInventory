@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
-import '../models/product_model.dart';
+import '../services/api_service.dart';
+import 'barcode_scanner_page.dart';
+import '../data/app_data.dart';
+import 'package:flutter/services.dart';
 
 class AddProductPage extends StatefulWidget {
-  final String categoryName;
+  final int? categoryId;
+  final String? categoryName;
 
-  const AddProductPage({super.key, required this.categoryName});
+  const AddProductPage({
+    super.key,
+    this.categoryId,
+    this.categoryName,
+  });
 
   @override
   State<AddProductPage> createState() => _AddProductPageState();
@@ -20,9 +28,44 @@ class _AddProductPageState extends State<AddProductPage> {
 
   String _unit = 'pcs';
   DateTime? _expiredDate;
+  bool _isLoading = false;
 
-  final units = const ['pcs', 'kg', 'gram', 'liter', 'ml', 'botol', 'bungkus'];
+final units = const [
+  'pcs',
+  'pack',
+  'box',
+  'bottle',
+  'can',
+  'kg',
+  'g',
+  'L',
+  'mL',
+];
+String _formatRupiah(String value) {
+  final number = value.replaceAll(RegExp(r'[^0-9]'), '');
 
+  if (number.isEmpty) return '';
+
+  final chars = number.split('').reversed.toList();
+
+  final result = <String>[];
+
+  for (int i = 0; i < chars.length; i++) {
+    if (i > 0 && i % 3 == 0) {
+      result.add('.');
+    }
+    result.add(chars[i]);
+  }
+
+  return result.reversed.join();
+}
+
+int _parseRupiah(String value) {
+  return int.tryParse(
+        value.replaceAll('.', ''),
+      ) ??
+      0;
+}
   @override
   void dispose() {
     _nameC.dispose();
@@ -46,21 +89,69 @@ class _AddProductPageState extends State<AddProductPage> {
       ),
     );
 
-    if (picked != null) setState(() => _expiredDate = picked);
+    if (picked != null) {
+      setState(() => _expiredDate = picked);
+    }
   }
 
-  void _scanBarcode() {
-    setState(() => _barcodeC.text = '8991234567890');
+  Future<void> _fillProductByBarcode(String barcode) async {
+    final productData = await ApiService.findProductByBarcode(barcode);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Barcode scanner belum diimplementasi'),
-        backgroundColor: AppColors.warning,
+    if (!mounted) return;
+
+    if (productData != null) {
+      setState(() {
+        _nameC.text = productData['name'] ?? '';
+        _priceC.text = productData['price'].toString().split('.').first;
+        _unit = productData['unit'] ?? 'pcs';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Produk ditemukan, data otomatis terisi')),
+      );
+    } else {
+      setState(() {
+        _nameC.clear();
+        _priceC.clear();
+        _unit = 'pcs';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Barcode belum ditemukan, isi produk manual'),
+        ),
+      );
+    }
+  }
+
+  void _scanBarcode() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const BarcodeScannerPage(),
       ),
     );
+
+    if (!mounted) return;
+    if (result == null || result.toString().isEmpty) return;
+
+    final barcode = result.toString();
+
+    setState(() {
+      _barcodeC.text = barcode;
+    });
+
+    await _fillProductByBarcode(barcode);
   }
 
-  void _saveProduct() {
+  String _formatDate(DateTime date) {
+    final y = date.year.toString();
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  Future<void> _saveProduct() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_expiredDate == null) {
@@ -73,22 +164,44 @@ class _AddProductPageState extends State<AddProductPage> {
       return;
     }
 
-    final product = Product(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: _nameC.text.trim(),
-      category: widget.categoryName,
-      price: int.parse(_priceC.text.trim()),
-      expiryDate: _expiredDate!,
-      quantity: int.parse(_qtyC.text.trim()),
-      unit: _unit,
-      barcode: _barcodeC.text.trim().isEmpty ? null : _barcodeC.text.trim(),
+    setState(() => _isLoading = true);
+
+    final success = await ApiService.addItem(
+      {
+        'id_user': AppData().userId,
+        'name': _nameC.text.trim(),
+        'quantity': int.parse(_qtyC.text.trim()),
+        'stok': int.parse(_qtyC.text.trim()),
+      'price': _parseRupiah(_priceC.text.trim()),
+        'unit': _unit,
+        'barcode': _barcodeC.text.trim().isEmpty ? null : _barcodeC.text.trim(),
+        'expired_date': _formatDate(_expiredDate!),
+      },
+      categoryId: widget.categoryId,
     );
 
-    Navigator.pop(context, product);
+    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+
+    if (success) {
+      Navigator.pop(context, true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gagal menyimpan produk'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final subtitle = widget.categoryName == null
+        ? 'Scan or input item, category will be classified automatically'
+        : 'Add item to ${widget.categoryName}';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -96,12 +209,15 @@ class _AddProductPageState extends State<AddProductPage> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: AppColors.textPrimary, size: 18),
+          icon: const Icon(
+            Icons.arrow_back_ios_new,
+            color: AppColors.textPrimary,
+            size: 18,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Add Product',
+          'Add Item',
           style: TextStyle(
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
@@ -122,17 +238,15 @@ class _AddProductPageState extends State<AddProductPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Add item to ${widget.categoryName}',
+            subtitle,
             style: const TextStyle(
               fontSize: 12,
               color: AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: 18),
-
           _barcodeBox(),
           const SizedBox(height: 20),
-
           Form(
             key: _formKey,
             child: Column(
@@ -140,14 +254,12 @@ class _AddProductPageState extends State<AddProductPage> {
                 _field(
                   controller: _nameC,
                   label: 'Product Name',
-                  hint: 'Example: Fuji Apple',
+                  hint: 'Dancow',
                   icon: Icons.label_outline,
                   validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Required' : null,
+                      v == null || v.trim().isEmpty ? 'Required' : null,
                 ),
-
                 const SizedBox(height: 14),
-
                 Row(
                   children: [
                     Expanded(
@@ -168,38 +280,45 @@ class _AddProductPageState extends State<AddProductPage> {
                     Expanded(child: _unitDropdown()),
                   ],
                 ),
-
                 const SizedBox(height: 14),
+_field(
+  controller: _priceC,
+  label: 'Price',
+  hint: 'Example: 12.000',
+  icon: Icons.price_change_outlined,
+  keyboardType: TextInputType.number,
+  inputFormatters: [
+    FilteringTextInputFormatter.digitsOnly,
+    TextInputFormatter.withFunction((oldValue, newValue) {
+      final formatted = _formatRupiah(newValue.text);
 
-                _field(
-                  controller: _priceC,
-                  label: 'Price',
-                  hint: '0',
-                  icon: Icons.price_change_outlined,
-                  keyboardType: TextInputType.number,
-                  validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Required' : null,
-                ),
-
+      return TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }),
+  ],
+  validator: (v) {
+    if (v == null || v.trim().isEmpty) return 'Required';
+    if (_parseRupiah(v) <= 0) return 'Invalid price';
+    return null;
+  },
+),
                 const SizedBox(height: 14),
                 _datePicker(),
-
                 const SizedBox(height: 14),
-
                 _field(
                   controller: _barcodeC,
                   label: 'Barcode (Optional)',
                   hint: 'Input manually or scan above',
                   icon: Icons.qr_code_outlined,
-                  keyboardType: TextInputType.number,
+                  keyboardType: TextInputType.text,
                 ),
-
                 const SizedBox(height: 28),
-
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _saveProduct,
+                    onPressed: _isLoading ? null : _saveProduct,
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 15),
@@ -207,13 +326,22 @@ class _AddProductPageState extends State<AddProductPage> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Text(
-                      'Save Product',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Save Product',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -292,8 +420,11 @@ class _AddProductPageState extends State<AddProductPage> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.calendar_today_outlined,
-                    size: 18, color: AppColors.primary),
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 10),
                 Text(
                   _expiredDate == null
@@ -313,24 +444,26 @@ class _AddProductPageState extends State<AddProductPage> {
     );
   }
 
-  Widget _field({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    TextInputType? keyboardType,
-    String? Function(String?)? validator,
-  }) {
+Widget _field({
+  required TextEditingController controller,
+  required String label,
+  required String hint,
+  required IconData icon,
+  TextInputType? keyboardType,
+  String? Function(String?)? validator,
+  List<TextInputFormatter>? inputFormatters,
+}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label(label),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          validator: validator,
-          decoration: _input(hint, icon),
-        ),
+       TextFormField(
+  controller: controller,
+  keyboardType: keyboardType,
+  validator: validator,
+  inputFormatters: inputFormatters,
+  decoration: _input(hint, icon),
+),
       ],
     );
   }

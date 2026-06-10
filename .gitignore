@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# EasyInventory
+backend/vendor/
+
+frontend/windows/flutter/generated_*
+frontend/linux/flutter/generated_*
+frontend/macos/Flutter/GeneratedPluginRegistrant.swift

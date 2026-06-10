@@ -23,7 +23,7 @@ class AppData {
   String name    = '';
   String email   = '';
 
-  bool get isLoggedIn => token.isNotEmpty;
+bool get isLoggedIn => userId != 0;
 
   void setSession({
     required String token,

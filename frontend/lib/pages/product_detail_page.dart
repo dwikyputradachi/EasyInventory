@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
 import '../models/product_model.dart';
+import '../services/api_service.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final Product product;
@@ -22,21 +23,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     product = widget.product;
   }
 
-  int get daysLeft => product.expiryDate.difference(DateTime.now()).inDays;
-
-  Color get statusColor {
-    if (daysLeft < 0) return AppColors.danger;
-    if (daysLeft <= 3) return AppColors.warning;
-    return AppColors.primary;
-  }
-
-  String get statusText {
-    if (daysLeft < 0) return "Expired";
-    if (daysLeft == 0) return "Expires today";
-    if (daysLeft <= 3) return "Expires in $daysLeft days";
-    return "Still safe";
-  }
-
   void _deleteProduct() {
     showDialog(
       context: context,
@@ -50,9 +36,20 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () {
+            onPressed: () async {
+              final success = await ApiService.deleteItem(product.id);
+
+              if (!success) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to delete product')),
+                );
+                return;
+              }
+
+              if (!mounted) return;
               Navigator.pop(context);
-              Navigator.pop(context, "deleted");
+              Navigator.pop(context, 'deleted');
             },
             child: const Text("Delete"),
           ),
@@ -94,13 +91,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 16),
-
                 TextField(
                   controller: nameC,
                   decoration: _input("Product Name"),
                 ),
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     Expanded(
@@ -118,27 +113,23 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         items: units
                             .map(
                               (u) => DropdownMenuItem(
-                            value: u,
-                            child: Text(u),
-                          ),
-                        )
+                                value: u,
+                                child: Text(u),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) => setModal(() => unit = v!),
                       ),
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 12),
-
                 TextField(
                   controller: priceC,
                   keyboardType: TextInputType.number,
                   decoration: _input("Price"),
                 ),
-
                 const SizedBox(height: 12),
-
                 InkWell(
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -146,16 +137,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       initialDate: expiredDate,
                       firstDate: DateTime.now(),
                       lastDate: DateTime.now().add(const Duration(days: 3650)),
-                      builder: (context, child) {
-                        return Theme(
-                          data: Theme.of(context).copyWith(
-                            colorScheme: const ColorScheme.light(
-                              primary: AppColors.primary,
-                            ),
-                          ),
-                          child: child!,
-                        );
-                      },
                     );
 
                     if (picked != null) {
@@ -185,17 +166,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
                 TextField(
                   controller: barcodeC,
                   keyboardType: TextInputType.number,
                   decoration: _input("Barcode (optional)"),
                 ),
-
                 const SizedBox(height: 20),
-
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -203,21 +180,34 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: () {
-                      final updated = product.copyWith(
-                        name: nameC.text.trim(),
-                        quantity: int.tryParse(qtyC.text) ?? product.quantity,
-                        unit: unit,
-                        price: int.tryParse(priceC.text) ?? product.price,
-                        expiryDate: expiredDate,
-                        barcode: barcodeC.text.trim().isEmpty
-                            ? null
-                            : barcodeC.text.trim(),
+                    onPressed: () async {
+                      final success = await ApiService.updateItem(
+                        product.id,
+                        {
+                          'name': nameC.text.trim(),
+                          'quantity':
+                              int.tryParse(qtyC.text) ?? product.quantity,
+                          'price': int.tryParse(priceC.text) ?? product.price,
+                          'unit': unit,
+                          'barcode': barcodeC.text.trim(),
+                          'expired_date':
+                              expiredDate.toIso8601String().split('T').first,
+                        },
                       );
 
-                      setState(() => product = updated);
+                      if (!success) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to update product'),
+                          ),
+                        );
+                        return;
+                      }
+
+                      if (!mounted) return;
                       Navigator.pop(context);
-                      Navigator.pop(context, updated);
+                      Navigator.pop(context, true);
                     },
                     child: const Text(
                       "Save Changes",
@@ -269,24 +259,41 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          _statusCard(),
-          const SizedBox(height: 16),
-
-          _infoTile(Icons.label_outline, "Name", product.name),
-          _infoTile(Icons.category_outlined, "Category", product.category),
-          _infoTile(
-            Icons.inventory_2_outlined,
-            "Stock",
-            "${product.quantity} ${product.unit}",
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  product.category,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                  ),
+                ),
+                const Divider(height: 30),
+                _rowInfo("Stock", "${product.quantity} ${product.unit}"),
+                _rowInfo("Price", "Rp ${product.price}"),
+                _rowInfo("Expired", expiredDate),
+                if (product.barcode != null && product.barcode!.isNotEmpty)
+                  _rowInfo("Barcode", product.barcode!),
+              ],
+            ),
           ),
-          _infoTile(Icons.price_change_outlined, "Price", "Rp ${product.price}"),
-          _infoTile(Icons.calendar_today_outlined, "Expired Date", expiredDate),
-
-          if (product.barcode != null)
-            _infoTile(Icons.qr_code_outlined, "Barcode", product.barcode!),
-
           const SizedBox(height: 24),
-
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -307,72 +314,32 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     );
   }
 
-  Widget _statusCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: statusColor.withOpacity(0.25)),
-      ),
+  Widget _rowInfo(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            backgroundColor: statusColor.withOpacity(0.15),
-            child: Icon(Icons.access_time, color: statusColor),
+          SizedBox(
+            width: 85,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
-          const SizedBox(width: 14),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  statusText,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _infoTile(IconData icon, String title, String value) {
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: AppColors.primary.withOpacity(0.10),
-          child: Icon(icon, color: AppColors.primary),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        subtitle: Text(
-          value,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
       ),
     );
   }

@@ -17,7 +17,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
-
+  int _dashboardKey = 0;
+  int _inventoryKey = 0;
   // Tracks which pages sudah pernah dibuka — lazy init
   final Set<int> _visited = {0};
 
@@ -55,13 +56,16 @@ class _HomePageState extends State<HomePage> {
         index: _currentIndex,
         children: [
           // Dashboard selalu ada
-          DashboardPage(
-            onOpenScan: _openScan,
-            onOpenInventory: () => _goTo(1),
-            onOpenShopping: () => _goTo(2),
-          ),
+       DashboardPage(
+  key: ValueKey(_dashboardKey),
+  onOpenScan: _openScan,
+  onOpenInventory: () => _goTo(1),
+  onOpenShopping: () => _goTo(2),
+),
           // Page lain hanya dibuild saat pertama kali dibuka
-          _visited.contains(1) ? const InventoryPage()    : const SizedBox.shrink(),
+       _visited.contains(1)
+    ? InventoryPage(key: ValueKey(_inventoryKey))
+    : const SizedBox.shrink(),
           _visited.contains(2) ? const ShoppingListPage() : const SizedBox.shrink(),
           _visited.contains(3) ? const StatisticsPage()   : const SizedBox.shrink(),
           _visited.contains(4) ? const ProfilePage()      : const SizedBox.shrink(),
@@ -95,12 +99,20 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _goTo(int index) {
-    setState(() {
-      _visited.add(index);
-      _currentIndex = index;
-    });
-  }
+void _goTo(int index) {
+  setState(() {
+    _visited.add(index);
+    _currentIndex = index;
+
+    if (index == 0) {
+      _dashboardKey++;
+    }
+
+    if (index == 1) {
+      _inventoryKey++;
+    }
+  });
+}
 
   Widget _navItem(int index, IconData icon, String label) {
     final active = _currentIndex == index;
