@@ -20,6 +20,10 @@ $unit         = $data['unit'] ?? null;
 $barcode      = $data['barcode'] ?? null;
 $expired_date = $data['expired_date'] ?? null;
 
+if ($expired_date === '') {
+    $expired_date = null;
+}
+
 // AUTO CATEGORY kalau id_category kosong
 if (!$id_category && !empty($name)) {
     $input = strtolower(trim($name));
@@ -112,72 +116,6 @@ if (!$stmt->execute()) {
 }
 
 $id_item = $conn->insert_id;
-
-// Low stock notification
-if ($stok <= 5) {
-    $type = "low_stock";
-    $title = $name;
-    $message = "Current stock: " . $stok;
-
-    $check = $conn->prepare("
-        SELECT id_notification 
-        FROM notification 
-        WHERE id_item = ? AND type = ? AND is_read = 0 
-        LIMIT 1
-    ");
-    $check->bind_param("is", $id_item, $type);
-    $check->execute();
-
-    if ($check->get_result()->num_rows === 0) {
-        $insertNotif = $conn->prepare("
-            INSERT INTO notification 
-            (id_item, title, message, type, is_read) 
-            VALUES (?, ?, ?, ?, 0)
-        ");
-        $insertNotif->bind_param("isss", $id_item, $title, $message, $type);
-        $insertNotif->execute();
-    }
-}
-
-// Expired / near expired notification
-if (!empty($expired_date)) {
-    $today = new DateTime(date("Y-m-d"));
-    $expiredDate = new DateTime($expired_date);
-    $daysLeft = (int)$today->diff($expiredDate)->format("%r%a");
-
-    if ($daysLeft <= 0) {
-        $type = "expired";
-        $title = $name;
-        $message = "Expired on " . $expiredDate->format("d M Y");
-    } elseif ($daysLeft <= 7) {
-        $type = "near_expired";
-        $title = $name;
-        $message = "Expires in " . $daysLeft . " day(s) (" . $expiredDate->format("d M Y") . ")";
-    } else {
-        $type = null;
-    }
-
-    if ($type !== null) {
-        $check = $conn->prepare("
-            SELECT id_notification 
-            FROM notification 
-            WHERE id_item = ? AND type = ? AND is_read = 0 
-            LIMIT 1
-        ");
-        $check->bind_param("is", $id_item, $type);
-        $check->execute();
-
-        if ($check->get_result()->num_rows === 0) {
-            $insertNotif = $conn->prepare("
-                INSERT INTO notification 
-                (id_item, title, message, type, is_read) 
-                VALUES (?, ?, ?, ?, 0)
-            ");
-            $insertNotif->bind_param("isss", $id_item, $title, $message, $type);
-            $insertNotif->execute();
-        }
-    }
-}
 
 $get = $conn->prepare("SELECT * FROM item WHERE id_item = ?");
 $get->bind_param("i", $id_item);

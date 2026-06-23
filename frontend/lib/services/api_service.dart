@@ -46,6 +46,7 @@ class ApiService {
 
       if (res.body.isEmpty) {
         return {
+          'success': false,
           'status': 'error',
           'message': 'Empty response from server',
         };
@@ -56,6 +57,7 @@ class ApiService {
       debugPrint('GET ERROR: $e');
 
       return {
+        'success': false,
         'status': 'error',
         'message': 'Network/JSON error: $e',
       };
@@ -85,6 +87,7 @@ class ApiService {
 
       if (res.body.isEmpty) {
         return {
+          'success': false,
           'status': 'error',
           'message': 'Empty response from server',
         };
@@ -95,6 +98,7 @@ class ApiService {
       debugPrint('POST ERROR: $e');
 
       return {
+        'success': false,
         'status': 'error',
         'message': 'Network/JSON error: $e',
       };
@@ -132,9 +136,9 @@ class ApiService {
   // =====================================================
 
   static Future<List<Product>> getItemsByCategory(
-      int categoryId,
-      String categoryName,
-      ) async {
+    int categoryId,
+    String categoryName,
+  ) async {
     final body = await get(
       'item/get_items_by_category.php?id_category=$categoryId',
     );
@@ -144,10 +148,10 @@ class ApiService {
     return data
         .map(
           (e) => Product.fromJson(
-        e,
-        category: categoryName,
-      ),
-    )
+            e,
+            category: categoryName,
+          ),
+        )
         .toList();
   }
 
@@ -155,52 +159,131 @@ class ApiService {
     Map<String, dynamic> data, {
     int? categoryId,
   }) async {
-    final endpoint = categoryId == null
-        ? 'item/add_item.php'
-        : 'item/add_item.php?id_category=$categoryId';
+    try {
+      final endpoint = categoryId == null
+          ? 'item/add_item.php'
+          : 'item/add_item.php?id_category=$categoryId';
 
-    final res = await http.post(
-      Uri.parse('$baseUrl/$endpoint'),
-      headers: _headers,
-      body: jsonEncode(data),
-    );
+      final res = await http.post(
+        Uri.parse('$baseUrl/$endpoint'),
+        headers: _headers,
+        body: jsonEncode(data),
+      );
 
-    return res.statusCode == 200 || res.statusCode == 201;
+      debugPrint('========== ADD ITEM ==========');
+      debugPrint('URL: $baseUrl/$endpoint');
+      debugPrint('TOKEN: ${AppData().token}');
+      debugPrint('BODY SENT: $data');
+      debugPrint('STATUS: ${res.statusCode}');
+      debugPrint('BODY: ${res.body}');
+
+      if (res.body.isEmpty) {
+        return false;
+      }
+
+      final body = jsonDecode(res.body);
+
+      return (res.statusCode == 200 || res.statusCode == 201) &&
+          (body['success'] == true || body['status'] == 'success');
+    } catch (e) {
+      debugPrint('ADD ITEM ERROR: $e');
+      return false;
+    }
   }
 
   static Future<bool> updateItem(
     String itemId,
     Map<String, dynamic> data,
   ) async {
-    final res = await http.put(
-      Uri.parse('$baseUrl/item/update_item.php?id_item=$itemId'),
-      headers: _headers,
-      body: jsonEncode(data),
-    );
+    try {
+      final bodyData = {
+        ...data,
+        'id_item': itemId,
+      };
 
-    return res.statusCode == 200;
+      final res = await http.put(
+        Uri.parse('$baseUrl/item/update_item.php'),
+        headers: _headers,
+        body: jsonEncode(bodyData),
+      );
+
+      debugPrint('========== UPDATE ITEM ==========');
+      debugPrint('URL: $baseUrl/item/update_item.php');
+      debugPrint('TOKEN: ${AppData().token}');
+      debugPrint('BODY SENT: $bodyData');
+      debugPrint('STATUS: ${res.statusCode}');
+      debugPrint('BODY: ${res.body}');
+
+      if (res.body.isEmpty) {
+        return false;
+      }
+
+      final body = jsonDecode(res.body);
+
+      return res.statusCode == 200 &&
+          (body['success'] == true || body['status'] == 'success');
+    } catch (e) {
+      debugPrint('UPDATE ITEM ERROR: $e');
+      return false;
+    }
   }
 
-  static Future<bool> updateItemStock(
-    String itemId,
-    int quantity,
-  ) async {
-    final res = await http.put(
-      Uri.parse('$baseUrl/item/update_stock.php?id_item=$itemId'),
-      headers: _headers,
-      body: jsonEncode({'quantity': quantity}),
-    );
+  static Future<bool> updateItemStock(String idItem, int change) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/item/update_stock.php'),
+        headers: _headers,
+        body: jsonEncode({
+          'id_item': idItem,
+          'change': change,
+        }),
+      );
 
-    return res.statusCode == 200;
+      debugPrint('========== UPDATE STOCK ==========');
+      debugPrint('URL: $baseUrl/item/update_stock.php');
+      debugPrint('TOKEN: ${AppData().token}');
+      debugPrint('BODY SENT: {id_item: $idItem, change: $change}');
+      debugPrint('STATUS: ${response.statusCode}');
+      debugPrint('BODY: ${response.body}');
+
+      if (response.body.isEmpty) {
+        return false;
+      }
+
+      final data = jsonDecode(response.body);
+
+      return response.statusCode == 200 && data['success'] == true;
+    } catch (e) {
+      debugPrint('UPDATE STOCK ERROR: $e');
+      return false;
+    }
   }
 
   static Future<bool> deleteItem(String itemId) async {
-    final res = await http.delete(
-      Uri.parse('$baseUrl/item/delete_item.php?id_item=$itemId'),
-      headers: _headers,
-    );
+    try {
+      final res = await http.delete(
+        Uri.parse('$baseUrl/item/delete_item.php?id_item=$itemId'),
+        headers: _headers,
+      );
 
-    return res.statusCode == 200;
+      debugPrint('========== DELETE ITEM ==========');
+      debugPrint('URL: $baseUrl/item/delete_item.php?id_item=$itemId');
+      debugPrint('TOKEN: ${AppData().token}');
+      debugPrint('STATUS: ${res.statusCode}');
+      debugPrint('BODY: ${res.body}');
+
+      if (res.body.isEmpty) {
+        return false;
+      }
+
+      final body = jsonDecode(res.body);
+
+      return res.statusCode == 200 &&
+          (body['success'] == true || body['status'] == 'success');
+    } catch (e) {
+      debugPrint('DELETE ITEM ERROR: $e');
+      return false;
+    }
   }
 
   // =====================================================
@@ -240,22 +323,60 @@ class ApiService {
   }
 
   static Future<bool> markNotificationAsRead(String id) async {
-    final res = await http.put(
-      Uri.parse('$baseUrl/notification/mark_read.php?id=$id'),
-      headers: _headers,
-    );
+    try {
+      final res = await http.put(
+        Uri.parse('$baseUrl/notification/mark_read.php?id=$id'),
+        headers: _headers,
+      );
 
-    return res.statusCode == 200;
+      debugPrint('========== MARK NOTIFICATION READ ==========');
+      debugPrint('URL: $baseUrl/notification/mark_read.php?id=$id');
+      debugPrint('TOKEN: ${AppData().token}');
+      debugPrint('STATUS: ${res.statusCode}');
+      debugPrint('BODY: ${res.body}');
+
+      if (res.body.isEmpty) {
+        return false;
+      }
+
+      final body = jsonDecode(res.body);
+
+      return res.statusCode == 200 &&
+          (body['success'] == true || body['status'] == 'success');
+    } catch (e) {
+      debugPrint('MARK NOTIFICATION READ ERROR: $e');
+      return false;
+    }
   }
 
   static Future<bool> markAllNotificationsAsRead() async {
-    final res = await http.put(
-      Uri.parse(
-        '$baseUrl/notification/mark_all_read.php?id_user=${AppData().userId}',
-      ),
-      headers: _headers,
-    );
+    try {
+      final res = await http.put(
+        Uri.parse(
+          '$baseUrl/notification/mark_all_read.php?id_user=${AppData().userId}',
+        ),
+        headers: _headers,
+      );
 
-    return res.statusCode == 200;
+      debugPrint('========== MARK ALL NOTIFICATIONS READ ==========');
+      debugPrint(
+        'URL: $baseUrl/notification/mark_all_read.php?id_user=${AppData().userId}',
+      );
+      debugPrint('TOKEN: ${AppData().token}');
+      debugPrint('STATUS: ${res.statusCode}');
+      debugPrint('BODY: ${res.body}');
+
+      if (res.body.isEmpty) {
+        return false;
+      }
+
+      final body = jsonDecode(res.body);
+
+      return res.statusCode == 200 &&
+          (body['success'] == true || body['status'] == 'success');
+    } catch (e) {
+      debugPrint('MARK ALL NOTIFICATIONS READ ERROR: $e');
+      return false;
+    }
   }
 }

@@ -151,50 +151,40 @@ int _parseRupiah(String value) {
     return '$y-$m-$d';
   }
 
-  Future<void> _saveProduct() async {
-    if (!_formKey.currentState!.validate()) return;
+Future<void> _saveProduct() async {
+  if (!_formKey.currentState!.validate()) return;
 
-    if (_expiredDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pilih tanggal expired dulu'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
-      return;
-    }
+  setState(() => _isLoading = true);
 
-    setState(() => _isLoading = true);
-
-    final success = await ApiService.addItem(
-      {
-        'id_user': AppData().userId,
-        'name': _nameC.text.trim(),
-        'quantity': int.parse(_qtyC.text.trim()),
-        'stok': int.parse(_qtyC.text.trim()),
+  final success = await ApiService.addItem(
+    {
+      'id_user': AppData().userId,
+      'name': _nameC.text.trim(),
+      'quantity': int.parse(_qtyC.text.trim()),
+      'stok': int.parse(_qtyC.text.trim()),
       'price': _parseRupiah(_priceC.text.trim()),
-        'unit': _unit,
-        'barcode': _barcodeC.text.trim().isEmpty ? null : _barcodeC.text.trim(),
-        'expired_date': _formatDate(_expiredDate!),
-      },
-      categoryId: widget.categoryId,
+      'unit': _unit,
+      'barcode': _barcodeC.text.trim().isEmpty ? null : _barcodeC.text.trim(),
+      'expired_date': _expiredDate == null ? null : _formatDate(_expiredDate!),
+    },
+    categoryId: widget.categoryId,
+  );
+
+  setState(() => _isLoading = false);
+
+  if (!mounted) return;
+
+  if (success) {
+    Navigator.pop(context, true);
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Gagal menyimpan produk'),
+        backgroundColor: AppColors.danger,
+      ),
     );
-
-    setState(() => _isLoading = false);
-
-    if (!mounted) return;
-
-    if (success) {
-      Navigator.pop(context, true);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gagal menyimpan produk'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
-    }
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +397,7 @@ _field(
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _label('Expired Date'),
+   _label('Expired Date (Optional)'),
         InkWell(
           onTap: _pickDate,
           borderRadius: BorderRadius.circular(14),
@@ -428,7 +418,7 @@ _field(
                 const SizedBox(width: 10),
                 Text(
                   _expiredDate == null
-                      ? 'Choose expired date'
+                     ? 'Skip if item has no expiry date'
                       : '${_expiredDate!.day}/${_expiredDate!.month}/${_expiredDate!.year}',
                   style: TextStyle(
                     color: _expiredDate == null

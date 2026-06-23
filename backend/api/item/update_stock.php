@@ -1,67 +1,125 @@
 <?php
+require_once __DIR__ . '/../config/response.php';
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/auth_middleware.php';
+require_once __DIR__ . '/../config/notification_helper.php';
 
-include_once '../config/response.php';
-include_once '../config/database.php';
-include_once '../config/notification_helper.php';
+header('Content-Type: application/json');
 
-/** @var mysqli $conn */
+$user = authenticate();
+$id_user = (int)$user['id_user'];
 
-$id_item = $_GET['id_item'] ?? null;
+$conn = getDB();
+
 $data = json_decode(file_get_contents("php://input"), true);
 
-if (!$id_item) {
+$id_item = isset($data['id_item']) ? (int)$data['id_item'] : null;
+$change  = isset($data['change']) ? (int)$data['change'] : null;
+
+if (!$id_item || $change === null) {
     echo json_encode([
         "success" => false,
-        "message" => "id_item wajib diisi"
+        "message" => "id_item dan change wajib diisi",
+        "debug" => [
+            "id_item" => $id_item,
+            "change" => $change,
+            "data" => $data
+        ]
     ]);
     exit;
 }
 
-$quantity = $data['quantity'] ?? null;
+$get = $conn->prepare("
+    SELECT * FROM item 
+    WHERE id_item = ? AND id_user = ?
+    LIMIT 1
+");
 
-if ($quantity === null) {
+if (!$get) {
     echo json_encode([
         "success" => false,
-        "message" => "quantity wajib diisi"
+        "message" => "Prepare select failed",
+        "error" => $conn->error
     ]);
     exit;
 }
 
-$checkItem = $conn->prepare("SELECT * FROM item WHERE id_item = ?");
-$checkItem->bind_param("i", $id_item);
-$checkItem->execute();
-$result = $checkItem->get_result();
+$get->bind_param("ii", $id_item, $id_user);
+$get->execute();
 
-if ($result->num_rows === 0) {
+$item = $get->get_result()->fetch_assoc();
+
+if (!$item) {
     http_response_code(404);
     echo json_encode([
         "success" => false,
-        "message" => "Item tidak ditemukan"
+        "message" => "Item tidak ditemukan",
+        "debug" => [
+            "id_item" => $id_item,
+            "id_user" => $id_user
+        ]
     ]);
     exit;
 }
 
-$sql = "UPDATE item SET quantity = ?, stok = ? WHERE id_item = ?";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("iii", $quantity, $quantity, $id_item);
+$currentStock = (int)$item['stok'];
+$newStock = $currentStock + $change;
 
-if (!$stmt->execute()) {
+if ($newStock < 0) {
+    $newStock = 0;
+}
+
+$update = $conn->prepare("
+    UPDATE item 
+    SET quantity = ?, stok = ?
+    WHERE id_item = ? AND id_user = ?
+");
+
+if (!$update) {
     echo json_encode([
         "success" => false,
-        "message" => "Stock gagal diupdate"
+        "message" => "Prepare update failed",
+        "error" => $conn->error
     ]);
     exit;
 }
 
-$get = $conn->prepare("SELECT * FROM item WHERE id_item = ?");
-$get->bind_param("i", $id_item);
-$get->execute();
-$updatedItem = $get->get_result()->fetch_assoc();
+$update->bind_param("iiii", $newStock, $newStock, $id_item, $id_user);
+
+if (!$update->execute()) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Stok gagal diupdate",
+        "error" => $update->error
+    ]);
+    exit;
+}
+
+$getNew = $conn->prepare("
+    SELECT * FROM item 
+    WHERE id_item = ? AND id_user = ?
+    LIMIT 1
+");
+
+if (!$getNew) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Prepare get updated item failed",
+        "error" => $conn->error
+    ]);
+    exit;
+}
+
+$getNew->bind_param("ii", $id_item, $id_user);
+$getNew->execute();
+
+$updatedItem = $getNew->get_result()->fetch_assoc();
 
 syncItemNotifications($conn, $updatedItem);
 
 echo json_encode([
     "success" => true,
-    "message" => "Stock berhasil diupdate",
+    "message" => "Stok berhasil diupdate",
     "data" => $updatedItem
 ]);
+exit;
