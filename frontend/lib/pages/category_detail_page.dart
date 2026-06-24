@@ -81,7 +81,11 @@ Future<void> _increaseQty(Product p) async {
     _isLoading = true;
   });
 
-  final success = await ApiService.updateItemStock(p.id, 1);
+ final success = await ApiService.updateItemStock(
+  p.id,
+  1,
+  unitPrice: p.price,
+);
 
   if (success) {
     await _loadProducts();

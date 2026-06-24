@@ -8,14 +8,14 @@ import '../models/product_model.dart';
 class ApiService {
   static String get baseUrl {
     if (kIsWeb) {
-      return 'http://localhost/easy_inventory/api';
+      return 'http://localhost/easy_inventory/backend/api';
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2/easy_inventory/api';
+      return 'http://10.0.2.2/easy_inventory/backend/api';
     }
 
-    return 'http://localhost/easy_inventory/api';
+    return 'http://localhost/easy_inventory/backend/api';
   }
 
   static Map<String, String> get _headers {
@@ -228,7 +228,11 @@ class ApiService {
     }
   }
 
-  static Future<bool> updateItemStock(String idItem, int change) async {
+  static Future<bool> updateItemStock(
+    String idItem,
+    int change, {
+    int unitPrice = 0,
+  }) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/item/update_stock.php'),
@@ -236,13 +240,16 @@ class ApiService {
         body: jsonEncode({
           'id_item': idItem,
           'change': change,
+          'unit_price': unitPrice,
         }),
       );
 
       debugPrint('========== UPDATE STOCK ==========');
       debugPrint('URL: $baseUrl/item/update_stock.php');
       debugPrint('TOKEN: ${AppData().token}');
-      debugPrint('BODY SENT: {id_item: $idItem, change: $change}');
+      debugPrint(
+        'BODY SENT: {id_item: $idItem, change: $change, unit_price: $unitPrice}',
+      );
       debugPrint('STATUS: ${response.statusCode}');
       debugPrint('BODY: ${response.body}');
 
@@ -310,6 +317,42 @@ class ApiService {
     }
 
     return null;
+  }
+
+  // =====================================================
+  // STATISTICS
+  // =====================================================
+
+  static Future<Map<String, dynamic>> getMonthlySpending(
+    int year, {
+    int? month,
+  }) async {
+    var endpoint = 'statistics/monthly_spending.php?year=$year';
+
+    if (month != null) {
+      endpoint += '&month=$month';
+    }
+
+    return await get(endpoint);
+  }
+
+  // =====================================================
+  // RECEIPT HISTORY
+  // =====================================================
+
+  static Future<List<Map<String, dynamic>>> getReceiptsByMonth({
+    required int year,
+    required int month,
+  }) async {
+    final body = await get(
+      'receipt/get_receipts_by_month.php?year=$year&month=$month',
+    );
+
+    if (body['status'] == 'success' || body['success'] == true) {
+      return List<Map<String, dynamic>>.from(body['data'] ?? []);
+    }
+
+    return [];
   }
 
   // =====================================================
