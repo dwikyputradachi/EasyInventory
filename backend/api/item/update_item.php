@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/response.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth_middleware.php';
 require_once __DIR__ . '/../config/notification_helper.php';
+require_once __DIR__ . '/../config/receipt_helper.php';
 
 header('Content-Type: application/json');
 
@@ -55,7 +56,15 @@ if (!$name || $quantity === null || !$unit) {
 
 $quantity = (int)$quantity;
 $stok = (int)$stok;
-$price = (int)$price;
+$price = (float)$price;
+
+if ($quantity < 0) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Quantity tidak boleh kurang dari 0"
+    ]);
+    exit;
+}
 
 $checkItem = $conn->prepare("
     SELECT * FROM item 
@@ -90,6 +99,22 @@ if (!$item) {
     exit;
 }
 
+$oldStock = (int)$item['stok'];
+$newStock = $quantity;
+$restockQty = 0;
+
+if ($newStock > $oldStock) {
+    $restockQty = $newStock - $oldStock;
+
+    if ($price <= 0) {
+        echo json_encode([
+            "success" => false,
+            "message" => "Price wajib diisi saat quantity dinaikkan"
+        ]);
+        exit;
+    }
+}
+
 $stmt = $conn->prepare("
     UPDATE item 
     SET 
@@ -113,7 +138,7 @@ if (!$stmt) {
 }
 
 $stmt->bind_param(
-    "siiisssii",
+    "siidsssii",
     $name,
     $quantity,
     $stok,
@@ -132,6 +157,31 @@ if (!$stmt->execute()) {
         "error" => $stmt->error
     ]);
     exit;
+}
+
+// Kalau quantity dinaikkan dari Edit Product, simpan sebagai restock ke receipt
+$receiptResult = null;
+
+if ($restockQty > 0) {
+    $receiptResult = createReceiptItem(
+        $conn,
+        $id_user,
+        $id_item,
+        $item['id_category'],
+        $name,
+        $restockQty,
+        $price,
+        'Restock from Edit Product'
+    );
+
+    if (!$receiptResult['success']) {
+        echo json_encode([
+            "success" => false,
+            "message" => "Produk berhasil diupdate, tapi gagal masuk pengeluaran",
+            "receipt_error" => $receiptResult
+        ]);
+        exit;
+    }
 }
 
 $get = $conn->prepare("
@@ -159,6 +209,8 @@ syncItemNotifications($conn, $updatedItem);
 echo json_encode([
     "success" => true,
     "message" => "Produk berhasil diupdate",
-    "data" => $updatedItem
+    "data" => $updatedItem,
+    "restock_qty" => $restockQty,
+    "receipt" => $receiptResult
 ]);
 exit;
