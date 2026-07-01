@@ -109,17 +109,19 @@ class ApiService {
   // BARCODE
   // =====================================================
 
-  static Future<Map<String, dynamic>?> findProductByBarcode(
-    String barcode,
-  ) async {
-    final body = await get('item/find_by_barcode.php?barcode=$barcode');
+static Future<Map<String, dynamic>?> findProductByBarcode(
+  String barcode,
+) async {
+  final body = await get('item/find_by_barcode.php'
+'?barcode=$barcode'
+'&id_user=${AppData().userId}');
 
-    if (body['status'] == 'success' || body['success'] == true) {
-      return body['data'];
-    }
-
-    return null;
+  if (body['status'] == 'success' || body['success'] == true) {
+    return body['data']; 
   }
+
+  return null;
+}
 
   // =====================================================
   // CATEGORY

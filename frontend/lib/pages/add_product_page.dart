@@ -94,35 +94,82 @@ int _parseRupiah(String value) {
     }
   }
 
-  Future<void> _fillProductByBarcode(String barcode) async {
-    final productData = await ApiService.findProductByBarcode(barcode);
+Future<void> _fillProductByBarcode(String barcode) async {
+  final productData =
+      await ApiService.findProductByBarcode(barcode);
 
-    if (!mounted) return;
+  if (!mounted) return;
 
-    if (productData != null) {
-      setState(() {
-        _nameC.text = productData['name'] ?? '';
-        _priceC.text = productData['price'].toString().split('.').first;
-        _unit = productData['unit'] ?? 'pcs';
-      });
+  if (productData != null) {
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Produk ditemukan, data otomatis terisi')),
-      );
-    } else {
-      setState(() {
-        _nameC.clear();
-        _priceC.clear();
-        _unit = 'pcs';
-      });
+    setState(() {
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Barcode belum ditemukan, isi produk manual'),
-        ),
-      );
-    }
+      _nameC.text = productData['name'] ?? '';
+
+      _qtyC.text =
+          productData['quantity'].toString();
+
+      _priceC.text =
+          productData['price']
+              .toString()
+              .split('.')
+              .first;
+
+      _unit =
+          productData['unit'] ?? 'pcs';
+
+
+      if(productData['expired_date'] != null &&
+         productData['expired_date'] != '') {
+
+        _expiredDate =
+            DateTime.parse(
+              productData['expired_date']
+            );
+
+      }
+
+    });
+
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content:
+        Text('Produk ditemukan, data otomatis terisi'),
+      ),
+    );
+
+
+  } else {
+
+
+    setState(() {
+
+      // barcode tetap ada
+      _barcodeC.text = barcode;
+
+
+      // produk baru
+      _nameC.clear();
+      _qtyC.clear();
+      _priceC.clear();
+
+      _unit = 'pcs';
+
+      _expiredDate = null;
+
+    });
+
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content:
+        Text('Produk baru, silahkan isi data'),
+      ),
+    );
+
   }
+}
 
   void _scanBarcode() async {
     final result = await Navigator.push(
@@ -174,16 +221,22 @@ Future<void> _saveProduct() async {
 
   if (!mounted) return;
 
-  if (success) {
-    Navigator.pop(context, true);
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Gagal menyimpan produk'),
-        backgroundColor: AppColors.danger,
-      ),
-    );
-  }
+if (success) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Produk berhasil disimpan')),
+  );
+
+  _formKey.currentState!.reset();
+  _nameC.clear();
+  _qtyC.clear();
+  _barcodeC.clear();
+  _priceC.clear();
+  _qtyC.clear();
+  _unit = 'pcs';
+  _expiredDate = null;
+
+  setState(() {});
+}
 }
 
   @override
