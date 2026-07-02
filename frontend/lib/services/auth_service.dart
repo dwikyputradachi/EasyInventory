@@ -39,6 +39,46 @@ class AuthService {
 
     return res;
   }
+static Future<Map<String, dynamic>> sendOTP({
+  required String email,
+  required String purpose,
+}) async {
+  return await ApiService.post(
+    'auth/send_otp.php',
+    {
+      'email': email,
+      'purpose': purpose,
+    },
+  );
+}
+
+static Future<Map<String, dynamic>> verifyOTP({
+  required String email,
+  required String otp,
+  required String purpose,
+}) async {
+  return await ApiService.post(
+    'auth/verify_otp.php',
+    {
+      'email': email,
+      'otp': otp,
+      'purpose': purpose,
+    },
+  );
+}
+
+static Future<Map<String, dynamic>> resetPassword({
+  required String email,
+  required String password,
+}) async {
+  return await ApiService.post(
+    'auth/reset_password.php',
+    {
+      'email': email,
+      'password': password,
+    },
+  );
+}
 
   static void logout() {
     AppData().clearSession();
