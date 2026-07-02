@@ -12,6 +12,7 @@ class NotificationPage extends StatefulWidget {
 
 class _NotificationPageState extends State<NotificationPage> {
   List<dynamic> notifications = [];
+  List<Map<String, dynamic>> groupedNotificationsList = []; 
   bool isLoading = true;
 
   @override
@@ -21,47 +22,52 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Future<void> fetchNotifications() async {
-    final data = await ApiService.getNotifications();
+    try {
+      final data = await ApiService.getNotifications();
+      if (!mounted) return;
 
-    if (!mounted) return;
+      final Map<String, Map<String, dynamic>> grouped = {};
+      for (final item in data) {
+        final idItem = item['id_item']?.toString() ?? '';
+        if (idItem.isEmpty) continue; 
 
-    setState(() {
-      notifications = data;
-      isLoading = false;
-    });
-  }
-
-  List<Map<String, dynamic>> get groupedNotifications {
-    final Map<String, Map<String, dynamic>> grouped = {};
-
-    for (final item in notifications) {
-      final idItem = item['id_item'].toString();
-
-      if (!grouped.containsKey(idItem)) {
-        grouped[idItem] = {
-          'id_item': item['id_item'],
-          'title': item['title'],
-          'types': <String>[],
-          'messages': <String>[],
-          'ids': <dynamic>[],
-        };
+        if (!grouped.containsKey(idItem)) {
+          grouped[idItem] = {
+            'id_item': item['id_item'],
+            'title': item['title'],
+            'types': <String>[],
+            'messages': <String>[],
+            'ids': <dynamic>[],
+          };
+        }
+        grouped[idItem]!['types'].add(item['type'] ?? '');
+        grouped[idItem]!['messages'].add(item['message'] ?? '');
+        grouped[idItem]!['ids'].add(item['id_notification']);
       }
 
-      grouped[idItem]!['types'].add(item['type']);
-      grouped[idItem]!['messages'].add(item['message']);
-      grouped[idItem]!['ids'].add(item['id_notification']);
+      setState(() {
+        notifications = data;
+        groupedNotificationsList = grouped.values.toList(); // Simpan hasilnya ke variabel
+        isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isLoading = false);
     }
-
-    return grouped.values.toList();
   }
 
   Future<void> markAsRead(Map<String, dynamic> group) async {
-    final ids = group['ids'] as List<dynamic>;
+    final ids = group['ids'] as List<dynamic>? ?? [];
 
+    final List<Future<dynamic>> futures = [];
     for (final id in ids) {
       if (id != null) {
-        await ApiService.markNotificationAsRead(id.toString());
+        futures.add(ApiService.markNotificationAsRead(id.toString()));
       }
+    }
+
+    if (futures.isNotEmpty) {
+      await Future.wait(futures); 
     }
 
     await fetchNotifications();
@@ -74,9 +80,7 @@ class _NotificationPageState extends State<NotificationPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Clear all notifications?'),
-        content: const Text(
-          'All notifications will be removed from this list.',
-        ),
+        content: const Text('All notifications will be removed from this list.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -98,7 +102,6 @@ class _NotificationPageState extends State<NotificationPage> {
       await fetchNotifications();
     } else {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to clear notifications')),
       );
@@ -106,38 +109,23 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Color _color(List<String> types) {
-    if (types.contains('expired')) {
-      return AppColors.danger;
-    }
-
-    if (types.contains('low_stock') || types.contains('near_expired')) {
-      return AppColors.warning;
-    }
-
+    if (types.contains('expired')) return AppColors.danger;
+    if (types.contains('low_stock') || types.contains('near_expired')) return AppColors.warning;
     return AppColors.primary;
   }
 
   String _label(List<String> types) {
     final labels = <String>[];
-
-    if (types.contains('low_stock')) {
-      labels.add('Low Stock');
-    }
-
-    if (types.contains('near_expired')) {
-      labels.add('Near Expired');
-    }
-
-    if (types.contains('expired')) {
-      labels.add('Expired');
-    }
-
+    if (types.contains('low_stock')) labels.add('Low Stock');
+    if (types.contains('near_expired')) labels.add('Near Expired');
+    if (types.contains('expired')) labels.add('Expired');
     return labels.join(' • ');
   }
 
+
   @override
   Widget build(BuildContext context) {
-    final grouped = groupedNotifications;
+    final grouped = groupedNotificationsList; 
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -275,13 +263,16 @@ class _NotificationPageState extends State<NotificationPage> {
                               ],
                             ),
                           ),
-                          IconButton(
+                           IconButton(
                             tooltip: 'Delete',
                             icon: const Icon(
                               Icons.delete_outline,
                               color: AppColors.textSecondary,
                             ),
-                            onPressed: () => markAsRead(item),
+                            onPressed: () async {
+                              if (isLoading) return; 
+                              await markAsRead(item);
+                            },
                           ),
                         ],
                       ),

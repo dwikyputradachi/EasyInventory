@@ -4,518 +4,166 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 class OcrService {
-  static final _picker = ImagePicker();
+  static final ImagePicker _picker = ImagePicker();
 
-  static final _recognizer = TextRecognizer(
+  static final TextRecognizer _recognizer = TextRecognizer(
     script: TextRecognitionScript.latin,
   );
 
-  // =========================================================
-  // PUBLIC SCAN METHODS
-  // =========================================================
+  static const String _version = 'STABLE-V11-MINIMARKET-PIPELINE';
 
   static Future<List<Map<String, dynamic>>?> scanFromCamera() async {
-    final photo = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 90,
-    );
-
-    if (photo == null) return null;
-
-    return _processImage(photo.path);
+    final receipt = await scanReceiptFromCamera();
+    if (receipt == null) return null;
+    return List<Map<String, dynamic>>.from(receipt['items'] ?? []);
   }
 
   static Future<List<Map<String, dynamic>>?> scanFromGallery() async {
-    final photo = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 90,
-    );
-
-    if (photo == null) return null;
-
-    return _processImage(photo.path);
+    final receipt = await scanReceiptFromGallery();
+    if (receipt == null) return null;
+    return List<Map<String, dynamic>>.from(receipt['items'] ?? []);
   }
 
-  static Future<List<Map<String, dynamic>>> _processImage(String path) async {
-    final inputImage = InputImage.fromFile(File(path));
-    final result = await _recognizer.processImage(inputImage);
+  static Future<Map<String, dynamic>?> scanReceiptFromCamera() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,        
+      maxWidth: 1600,         
+      maxHeight: 1600,         
+    );
 
-    print('========== RAW OCR TEXT ==========');
-    print(result.text);
+    if (picked == null) return null;
+    return _processImage(File(picked.path));
+  }
 
-    final lines = _extractLinesByPosition(result);
+static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,   // 
+      imageQuality: 85,        
+      maxWidth: 1600,         
+      maxHeight: 1600,         
+    );
 
-    print('========== OCR LINES ==========');
-    for (final line in lines) {
-      print(line);
+    if (picked == null) return null;
+    return _processImage(File(picked.path));
+}
+  static Future<Map<String, dynamic>?> _processImage(File imageFile) async {
+    try {
+      final inputImage = InputImage.fromFile(imageFile);
+      final recognizedText = await _recognizer.processImage(inputImage);
+
+      final rawText = recognizedText.text;
+      final ocrLines = _extractLinesByPosition(recognizedText);
+      final parseInput = ocrLines.isNotEmpty ? ocrLines.join('\n') : rawText;
+
+      print('========== OCR SERVICE VERSION: $_version ==========');
+      print('========== RAW OCR TEXT ==========');
+      print(rawText);
+      print('========== OCR LINES ==========');
+      for (final line in ocrLines) {
+        print(line);
+      }
+
+      final parsed = parseReceiptText(parseInput);
+
+      print('========== PARSED RECEIPT ==========');
+      print('STORE     : ${parsed['store_name']}');
+      print('DATE      : ${parsed['date']}');
+      print('SUBTOTAL  : ${parsed['subtotal']}');
+      print('TOTAL     : ${parsed['total']}');
+      print('PAID      : ${parsed['paid']}');
+      print('CHANGE    : ${parsed['change']}');
+      print('SAVINGS   : ${parsed['savings']}');
+      print('TAX       : ${parsed['tax']}');
+      print('SERVICE   : ${parsed['service_charge']}');
+
+      print('========== PARSED ITEMS ==========');
+      for (final item in parsed['items']) {
+        print(item);
+      }
+
+      print('========== AMBIGUOUS ITEMS ==========');
+      for (final item in parsed['ambiguous_items']) {
+        print(item);
+      }
+
+      print('========== WARNINGS ==========');
+      for (final warning in parsed['warnings']) {
+        print(warning);
+      }
+
+      return parsed;
+    } catch (e) {
+      print('OCR ERROR: $e');
+      return null;
     }
-
-    final parsed = parseReceiptText(lines.join('\n'));
-
-    print('========== PARSED RECEIPT ==========');
-    print('STORE     : ${parsed['store_name']}');
-    print('DATE      : ${parsed['date']}');
-    print('SUBTOTAL  : ${parsed['subtotal']}');
-    print('TOTAL     : ${parsed['total']}');
-    print('PAID      : ${parsed['paid']}');
-    print('CHANGE    : ${parsed['change']}');
-    print('SAVINGS   : ${parsed['savings']}');
-    print('TAX       : ${parsed['tax']}');
-    print('SERVICE   : ${parsed['service_charge']}');
-
-    print('========== PARSED ITEMS ==========');
-    for (final item in parsed['items']) {
-      print(item);
-    }
-
-    print('========== WARNINGS ==========');
-    for (final warning in parsed['warnings']) {
-      print(warning);
-    }
-
-    return List<Map<String, dynamic>>.from(parsed['items']);
   }
 
   // =========================================================
-  // MAIN PARSER
+  // MAIN PIPELINE PARSER
   // =========================================================
 
   static Map<String, dynamic> parseReceiptText(String rawText) {
-    final lines = rawText
-        .split('\n')
-        .map(_normalizeText)
-        .where((line) => line.trim().isNotEmpty)
-        .toList();
+    final lines = _normalizeLines(rawText);
 
     final storeName = _detectStoreName(lines);
     final date = _detectDate(lines);
+    final zone = _detectReceiptZones(lines);
 
-    final items = <Map<String, dynamic>>[];
-    final discounts = <Map<String, dynamic>>[];
-    final extraCharges = <Map<String, dynamic>>[];
-
-    int? subtotal;
-    int? total;
-    int? paid;
-    int? change;
-    int? savings;
-    int? tax;
-    int? serviceCharge;
-
-    String? pendingName;
-    String? pendingCode;
-    String? pendingSummaryKey;
-    String? pendingExtraChargeKey;
-
-    bool footerStarted = false;
-
-    for (int i = 0; i < lines.length; i++) {
-      final line = _normalizeText(lines[i]);
-      final lower = line.toLowerCase();
-      final keywordLower = _normalizeOcrKeyword(lower);
-
-      if (line.length < 2) continue;
-
-      // =====================================================
-      // Summary value split into 2 lines:
-      // Sub Totali
-      // 442,000
-      //
-      // Total Bill :
-      // 522,685
-      // =====================================================
-      if (pendingSummaryKey != null && _isOnlyPrice(line)) {
-        final value = _parsePrice(line);
-
-        if (pendingSummaryKey == 'subtotal') subtotal = value;
-
-        if (pendingSummaryKey == 'total') {
-          // Jangan override total yang sudah benar.
-          total ??= value;
-        }
-
-        if (pendingSummaryKey == 'paid') paid = value;
-        if (pendingSummaryKey == 'change') change = value;
-        if (pendingSummaryKey == 'savings') savings = value;
-
-        pendingSummaryKey = null;
-        footerStarted = true;
-        continue;
-      }
-
-      // =====================================================
-      // Extra charge value split into 2 lines:
-      // Serv. Charge 1.5X
-      // 33,150
-      //
-      // Pajak 10% :
-      // 47,515
-      // =====================================================
-      if (pendingExtraChargeKey != null && _isOnlyPrice(line)) {
-        final value = _parsePrice(line);
-
-        if (pendingExtraChargeKey == 'service') {
-          serviceCharge = value;
-          extraCharges.add({
-            'label': 'Service Charge',
-            'amount': value,
-          });
-        }
-
-        if (pendingExtraChargeKey == 'tax') {
-          tax = value;
-          extraCharges.add({
-            'label': 'Tax',
-            'amount': value,
-          });
-        }
-
-        pendingExtraChargeKey = null;
-        footerStarted = true;
-        continue;
-      }
-
-      // =====================================================
-      // Summary same line:
-      // KEMBALI : 25,140
-      // Total Bill : 522,685
-      // Grand Total : 822 665
-      // =====================================================
-      final summary = _parseSummaryLine(line);
-      if (summary != null) {
-        final key = summary['key'] as String;
-        final value = summary['value'] as int;
-
-        if (key == 'subtotal') subtotal = value;
-
-        if (key == 'total') {
-          final isGrandTotal = keywordLower.contains('grand total');
-
-          // Kalau grand total muncul setelah Total Bill, jangan override.
-          if (!isGrandTotal || total == null) {
-            total = value;
-          }
-        }
-
-        if (key == 'paid') paid = value;
-        if (key == 'change') change = value;
-        if (key == 'savings') savings = value;
-
-        footerStarted = true;
-        pendingName = null;
-        pendingCode = null;
-        pendingSummaryKey = null;
-        pendingExtraChargeKey = null;
-        continue;
-      }
-
-      // =====================================================
-      // Extra charges same line:
-      // Service Charge 11,150
-      // Tax Resto 10% 23,415
-      // =====================================================
-      final extraCharge = _parseExtraChargeLine(line);
-      if (extraCharge != null) {
-        final key = extraCharge['key'] as String;
-        final value = extraCharge['value'] as int;
-
-        if (key == 'service') {
-          serviceCharge = value;
-          extraCharges.add({
-            'label': 'Service Charge',
-            'amount': value,
-          });
-        }
-
-        if (key == 'tax') {
-          tax = value;
-          extraCharges.add({
-            'label': 'Tax',
-            'amount': value,
-          });
-        }
-
-        footerStarted = true;
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Summary label only:
-      // HARGA JUAL:
-      // TOTAL:
-      // Tota1
-      // Sub Totali
-      // =====================================================
-      final summaryKeyOnly = _detectSummaryKeyOnly(line);
-      if (summaryKeyOnly != null) {
-        pendingSummaryKey = summaryKeyOnly;
-        footerStarted = true;
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Extra charge label only:
-      // Service Charge
-      // Serv. Charge 1.5X
-      // Tax Resto 10%
-      // Pajak 10%
-      // =====================================================
-      final extraChargeKeyOnly = _detectExtraChargeKeyOnly(line);
-      if (extraChargeKeyOnly != null) {
-        pendingExtraChargeKey = extraChargeKeyOnly;
-        footerStarted = true;
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      if (_isHardFooterStarter(keywordLower)) {
-        footerStarted = true;
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      if (footerStarted) {
-        continue;
-      }
-
-      // =====================================================
-      // Discount / voucher line:
-      // VC NUTRIJEL ... :(2,000)
-      // Saving : -149,000
-      // =====================================================
-      if (_isDiscountLine(keywordLower)) {
-        final discount = _parseDiscountLine(line);
-        if (discount != null) {
-          discounts.add(discount);
-        }
-        continue;
-      }
-
-      if (_shouldSkipLine(keywordLower)) {
-        continue;
-      }
-
-      // =====================================================
-      // Pending product + only price:
-      // Restaurant:
-      // 2 Hot Ocha
-      // 58,000
-      //
-      // Here 58,000 is LINE TOTAL, not unit price.
-      // So price = 58,000 / 2 = 29,000.
-      // =====================================================
-      if (pendingName != null && _isOnlyPrice(line)) {
-        final lineTotal = _parsePrice(line);
-
-        if (_isValidItemPrice(lineTotal)) {
-          int qty = 1;
-          String name = pendingName!;
-
-          final qtyName = _extractLeadingQtyAndName(pendingName!);
-          if (qtyName != null) {
-            qty = qtyName['quantity'] as int;
-            name = qtyName['name'] as String;
-          }
-
-          final unitPrice = qty > 1 ? (lineTotal / qty).round() : lineTotal;
-
-          final item = _buildItem(
-            name: name,
-            quantity: qty,
-            unitPrice: unitPrice,
-            lineTotal: lineTotal,
-            code: pendingCode,
-          );
-
-          if (item != null) {
-            items.add(item);
-          }
-
-          pendingName = null;
-          pendingCode = null;
-          continue;
-        }
-      }
-
-      // =====================================================
-      // Pattern A: numbered item
-      // 1. Vaseline Lip Rosy Lips x1 Rp36,900
-      // =====================================================
-      final numbered = _parseNumberedItem(line);
-      if (numbered != null) {
-        items.add(numbered);
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Pattern B: single line full item
-      // NESTLE PURE LIFE 600 2 3600 7,200
-      // LE MINERALE 600ML 2 3500 7,000
-      // =====================================================
-      final singleLine = _parseSingleLineItem(line);
-      if (singleLine != null) {
-        items.add(singleLine);
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Pattern C: qty + name + line total
-      // 4 Nasi Putih 24.000
-      // 2 Ayam Goreng 36.000
-      // =====================================================
-      final qtyNamePrice = _parseQtyNamePrice(line);
-      if (qtyNamePrice != null) {
-        items.add(qtyNamePrice);
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Pattern D: item name + price
-      // POP MIE PD.DWR AYM75 5.400
-      // KNZLER SNGL ES KJU 65 8,700
-      // =====================================================
-      final namePrice = _parseNamePrice(line);
-      if (namePrice != null) {
-        items.add(namePrice);
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Pattern E: compact detail after pending product
-      // POP MIE AYAM 75G
-      // 1 4900
-      // 4,900
-      // =====================================================
-      final compactDetail = _parseCompactQtyUnitLine(line);
-      if (compactDetail != null && pendingName != null) {
-        final qty = compactDetail['quantity'] as int;
-        final unitPrice = compactDetail['unit_price'] as int;
-
-        int lineTotal = qty * unitPrice;
-
-        if (i + 1 < lines.length) {
-          final nextLine = _normalizeText(lines[i + 1]);
-          if (_isOnlyPrice(nextLine)) {
-            final nextPrice = _parsePrice(nextLine);
-            if (_isValidItemPrice(nextPrice)) {
-              lineTotal = nextPrice;
-              i++;
-            }
-          }
-        }
-
-        final item = _buildItem(
-          name: pendingName,
-          quantity: qty,
-          unitPrice: unitPrice,
-          lineTotal: lineTotal,
-          code: pendingCode,
-        );
-
-        if (item != null) {
-          items.add(item);
-        }
-
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Pattern F: detail line after pending product
-      // FINNA ULEG SAMBAL UDANG
-      // 1,00 X @14.500 : 14.500
-      //
-      // MENTOS SAK FRUIT
-      // 1 x 6.400 = 6.400
-      // =====================================================
-      final detail = _parseQtyPriceDetail(line);
-      if (detail != null && pendingName != null) {
-        final qty = detail['quantity'] as int;
-        final unitPrice = detail['unit_price'] as int;
-        final lineTotal = detail['line_total'] as int;
-
-        final item = _buildItem(
-          name: pendingName,
-          quantity: qty,
-          unitPrice: unitPrice,
-          lineTotal: lineTotal,
-          code: pendingCode,
-        );
-
-        if (item != null) {
-          items.add(item);
-        }
-
-        pendingName = null;
-        pendingCode = null;
-        continue;
-      }
-
-      // =====================================================
-      // Pattern G: product name only, wait for next price/detail.
-      // 1 Beef Teriyaki Ramen
-      // 1Onsen Egg Broccoli with To...
-      // Salmon Sakura
-      // 2 Hot Ocha
-      // =====================================================
-      if (_looksLikeProductName(line)) {
-        final codeAndName = _extractCodeAndName(line);
-
-        pendingCode = codeAndName['code'];
-        pendingName = codeAndName['name'];
-        continue;
-      }
-    }
-
+    final summary = _parseSummaryFromBottom(lines);
+    final discounts = _parseDiscounts(lines);
+    final items = _parseItemsFromZone(lines, zone['itemStart']!, zone['itemEnd']!);
     final mergedItems = _mergeDuplicateItems(items);
+    final ambiguousItems = _collectAmbiguousItemsFromZone(
+      lines,
+      zone['itemStart']!,
+      zone['itemEnd']!,
+      mergedItems,
+    );
+
     final sumItems = _sumItemTotals(mergedItems);
+    final savings = summary['savings'] ?? _sumDiscounts(discounts);
 
-    final finalSubtotal = subtotal ?? sumItems;
+    int? subtotal = summary['subtotal'];
+    int? total = summary['total'];
 
-    int finalTotal;
-    if (total != null) {
-      finalTotal = total;
-    } else if (subtotal != null && (serviceCharge != null || tax != null)) {
-      finalTotal = subtotal + (serviceCharge ?? 0) + (tax ?? 0);
-    } else {
-      finalTotal = finalSubtotal;
+    // Untuk minimarket, subtotal bisa dianggap jumlah item sebelum diskon.
+    subtotal ??= sumItems;
+
+    // Alfamart kadang OCR Total Belanja jadi ",700". Jika total rusak/terlalu kecil,
+    // turunkan dari total item - diskon.
+    final computedAfterDiscount = sumItems - (savings ?? 0);
+    if (total == null || total <= 0) {
+      total = computedAfterDiscount > 0 ? computedAfterDiscount : sumItems;
+    } else if (sumItems > 0 && total < (sumItems * 0.5).round()) {
+      total = computedAfterDiscount > 0 ? computedAfterDiscount : sumItems;
     }
+
+    final warnings = _buildWarnings(
+      items: mergedItems,
+      ambiguousItems: ambiguousItems,
+      total: total,
+      sumItems: sumItems,
+      savings: savings,
+    );
 
     return {
       'store_name': storeName,
       'date': date,
       'items': mergedItems,
-      'subtotal': finalSubtotal,
-      'total': finalTotal,
-      'paid': paid,
-      'change': change,
+      'ambiguous_items': ambiguousItems,
+      'subtotal': subtotal,
+      'total': total,
+      'paid': summary['paid'],
+      'change': summary['change'],
       'savings': savings,
-      'tax': tax,
-      'service_charge': serviceCharge,
+      'tax': summary['tax'],
+      'service_charge': summary['service_charge'],
       'discounts': discounts,
-      'extra_charges': extraCharges,
+      'extra_charges': <Map<String, dynamic>>[],
       'raw_lines': lines,
       'raw_text': rawText,
-      'warnings': _buildWarnings(
-        items: mergedItems,
-        total: finalTotal,
-        sumItems: sumItems,
-      ),
+      'warnings': warnings,
     };
   }
 
@@ -524,831 +172,668 @@ class OcrService {
   // =========================================================
 
   static List<String> _extractLinesByPosition(RecognizedText result) {
-    final ocrLines = result.blocks
+    final textLines = result.blocks
         .expand((block) => block.lines)
         .where((line) => line.text.trim().isNotEmpty)
         .toList();
 
-    ocrLines.sort((a, b) {
+    textLines.sort((a, b) {
       final ay = a.boundingBox.top;
       final by = b.boundingBox.top;
-
       if ((ay - by).abs() < 12) {
         return a.boundingBox.left.compareTo(b.boundingBox.left);
       }
-
       return ay.compareTo(by);
     });
 
     final rows = <List<TextLine>>[];
 
-    for (final line in ocrLines) {
+    for (final line in textLines) {
       final centerY = line.boundingBox.center.dy;
-
-      final rowIndex = rows.indexWhere((row) {
+      final index = rows.indexWhere((row) {
         final rowCenterY = row.first.boundingBox.center.dy;
         return (rowCenterY - centerY).abs() < 8;
       });
 
-      if (rowIndex == -1) {
+      if (index == -1) {
         rows.add([line]);
       } else {
-        rows[rowIndex].add(line);
+        rows[index].add(line);
       }
     }
 
     final resultLines = <String>[];
-
     for (final row in rows) {
       row.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
-
       final text = row.map((e) => e.text.trim()).join(' ');
       final normalized = _normalizeText(text);
-
-      if (normalized.isNotEmpty) {
-        resultLines.add(normalized);
-      }
+      if (normalized.isNotEmpty) resultLines.add(normalized);
     }
 
     return resultLines;
   }
 
   // =========================================================
-  // ITEM PARSERS
+  // PIPELINE: NORMALIZE / STORE / DATE / ZONE
   // =========================================================
 
-  static Map<String, dynamic>? _parseNumberedItem(String line) {
-    final clean = _normalizeText(line);
-
-    final match = RegExp(
-      r'^\d+\.\s*(.+?)\s+x\s*(\d+)\s+(?:rp\s*)?([\d.,]+)$',
-      caseSensitive: false,
-    ).firstMatch(clean);
-
-    if (match == null) return null;
-
-    final name = _cleanName(match.group(1)!);
-    final qty = int.tryParse(match.group(2)!) ?? 1;
-    final price = _parsePrice(match.group(3)!);
-
-    if (name.isEmpty || !_isValidItemPrice(price)) return null;
-
-    final unitPrice = qty > 1 ? (price / qty).round() : price;
-
-    return _buildItem(
-      name: name,
-      quantity: qty,
-      unitPrice: unitPrice,
-      lineTotal: price,
-    );
+  static List<String> _normalizeLines(String rawText) {
+    return rawText
+        .split('\n')
+        .map(_normalizeText)
+        .where((line) => line.trim().isNotEmpty)
+        .toList();
   }
 
-  static Map<String, dynamic>? _parseSingleLineItem(String line) {
-    final clean = _normalizeText(line);
-
-    if (_shouldSkipLine(_normalizeOcrKeyword(clean.toLowerCase()))) return null;
-    if (_parseQtyPriceDetail(clean) != null) return null;
-
-    final tokens = clean.split(' ').where((e) => e.trim().isNotEmpty).toList();
-    if (tokens.length < 4) return null;
-
-    final numericIndexes = <int>[];
-
-    for (int i = 0; i < tokens.length; i++) {
-      final token = tokens[i];
-
-      if (_looksLikeStandaloneNumber(token)) {
-        numericIndexes.add(i);
-      }
-    }
-
-    if (numericIndexes.length < 3) return null;
-
-    final totalIndex = numericIndexes[numericIndexes.length - 1];
-    final unitPriceIndex = numericIndexes[numericIndexes.length - 2];
-    final qtyIndex = numericIndexes[numericIndexes.length - 3];
-
-    if (totalIndex != tokens.length - 1) return null;
-
-    final qty = int.tryParse(tokens[qtyIndex]) ?? 1;
-    final unitPrice = _parsePrice(tokens[unitPriceIndex]);
-    final lineTotal = _parsePrice(tokens[totalIndex]);
-
-    if (!_isValidQty(qty)) return null;
-    if (!_isValidItemPrice(unitPrice)) return null;
-    if (!_isValidItemPrice(lineTotal)) return null;
-
-    final expected = qty * unitPrice;
-    final diff = (lineTotal - expected).abs();
-
-    if (diff > 1000) return null;
-
-    final nameTokens = tokens.sublist(0, qtyIndex);
-    final name = _cleanName(nameTokens.join(' '));
-
-    if (name.isEmpty) return null;
-    if (!_looksLikeProductName(name)) return null;
-
-    return _buildItem(
-      name: name,
-      quantity: qty,
-      unitPrice: unitPrice,
-      lineTotal: lineTotal,
-    );
+  static String _normalizeText(String text) {
+    return text
+        .replaceAll('\u00a0', ' ')
+        .replaceAll('|', 'I')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
-  static Map<String, dynamic>? _parseQtyNamePrice(String line) {
-    final clean = _normalizeText(line);
-    final pricePattern = _priceLikePattern();
-
-    final match = RegExp(
-      '^'
-      r'(\d{1,3})'
-      r'\s+'
-      r'(.+?)'
-      r'\s+'
-      '($pricePattern)'
-      r'$',
-      caseSensitive: false,
-    ).firstMatch(clean);
-
-    if (match == null) return null;
-
-    final qty = int.tryParse(match.group(1)!) ?? 1;
-    final name = _cleanName(match.group(2)!);
-    final lineTotal = _parsePrice(match.group(3)!);
-
-    if (name.isEmpty) return null;
-    if (!_isValidQty(qty)) return null;
-    if (!_isValidItemPrice(lineTotal)) return null;
-
-    final unitPrice = qty > 1 ? (lineTotal / qty).round() : lineTotal;
-
-    return _buildItem(
-      name: name,
-      quantity: qty,
-      unitPrice: unitPrice,
-      lineTotal: lineTotal,
-    );
+  static String _normalizeKeyword(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll('!', 'i')
+        .replaceAll('|', 'i')
+        .replaceAll('_', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
-
-  static Map<String, dynamic>? _parseNamePrice(String line) {
-    final clean = _normalizeText(line);
-    final pricePattern = _priceLikePattern();
-
-    if (_parseQtyPriceDetail(clean) != null) return null;
-    if (_parseCompactQtyUnitLine(clean) != null) return null;
-
-    final match = RegExp(
-      '^'
-      r'(.+?)'
-      r'\s+'
-      '($pricePattern)'
-      r'$',
-      caseSensitive: false,
-    ).firstMatch(clean);
-
-    if (match == null) return null;
-
-    final rawName = match.group(1)!;
-    final price = _parsePrice(match.group(2)!);
-    final name = _cleanName(rawName);
-
-    if (name.isEmpty) return null;
-    if (!_looksLikeProductName(name)) return null;
-    if (!_isValidItemPrice(price)) return null;
-
-    return _buildItem(
-      name: name,
-      quantity: 1,
-      unitPrice: price,
-      lineTotal: price,
-    );
-  }
-
-  static Map<String, dynamic>? _parseQtyPriceDetail(String line) {
-    final clean = _normalizeText(line);
-
-    final match = RegExp(
-      r'^(\d+[.,]?\d*)\s*[xX]\s*@?\s*([\d.,]+)\s*[:=]?\s*([\d.,]+)?$',
-      caseSensitive: false,
-    ).firstMatch(clean);
-
-    if (match == null) return null;
-
-    final qtyRaw = match.group(1)!.replaceAll(',', '.');
-    final qtyDouble = double.tryParse(qtyRaw) ?? 1;
-    final qty = qtyDouble.round();
-
-    final unitPrice = _parsePrice(match.group(2)!);
-    final lineTotalRaw = match.group(3);
-    final lineTotal = lineTotalRaw == null || lineTotalRaw.trim().isEmpty
-        ? unitPrice * qty
-        : _parsePrice(lineTotalRaw);
-
-    if (!_isValidQty(qty)) return null;
-    if (!_isValidItemPrice(unitPrice)) return null;
-    if (!_isValidItemPrice(lineTotal)) return null;
-
-    return {
-      'quantity': qty,
-      'unit_price': unitPrice,
-      'line_total': lineTotal,
-    };
-  }
-
-  static Map<String, dynamic>? _parseCompactQtyUnitLine(String line) {
-    final clean = _normalizeText(line);
-    final parts = clean.split(' ').where((e) => e.isNotEmpty).toList();
-
-    if (parts.length != 2) return null;
-
-    final qty = int.tryParse(parts[0]);
-    final unitPrice = _parsePrice(parts[1]);
-
-    if (qty == null) return null;
-    if (!_isValidQty(qty)) return null;
-    if (!_isValidItemPrice(unitPrice)) return null;
-
-    return {
-      'quantity': qty,
-      'unit_price': unitPrice,
-    };
-  }
-
-  static Map<String, dynamic>? _extractLeadingQtyAndName(String line) {
-    final clean = _normalizeText(line);
-
-    // Support:
-    // 1 Beef Teriyaki Ramen
-    // 2 Hot Ocha
-    // 1Onsen Egg Broccoli with To...
-    final match = RegExp(r'^(\d{1,3})\s*(.+)$').firstMatch(clean);
-
-    if (match == null) return null;
-
-    final qty = int.tryParse(match.group(1)!) ?? 1;
-    final name = _cleanName(match.group(2)!);
-
-    if (!_isValidQty(qty)) return null;
-    if (name.isEmpty) return null;
-    if (!_looksLikeProductName(name)) return null;
-
-    return {
-      'quantity': qty,
-      'name': name,
-    };
-  }
-
-  // =========================================================
-  // SUMMARY / FOOTER PARSERS
-  // =========================================================
-
-  static Map<String, dynamic>? _parseSummaryLine(String line) {
-    final lower = line.toLowerCase();
-    final normalizedLower = _normalizeOcrKeyword(lower);
-    final compact = normalizedLower.replaceAll(RegExp(r'[^a-z]'), '');
-
-    final price = _lastPriceInLine(line);
-    if (price == null || price < 0) return null;
-
-    if (normalizedLower.contains('harga jual') ||
-        normalizedLower.contains('subtotal') ||
-        compact.contains('subtotal') ||
-        compact.contains('subtotali')) {
-      return {'key': 'subtotal', 'value': price};
-    }
-
-    if (_containsAny(normalizedLower, [
-      'total bill',
-      'total sales',
-      'total sale',
-      'total belanja',
-      'total tagihan',
-      'total bayar',
-      'grand total',
-    ])) {
-      return {'key': 'total', 'value': price};
-    }
-
-    if ((compact == 'total' ||
-        compact == 'totall' ||
-        compact == 'tota' ||
-        compact == 'totalbill') &&
-        !normalizedLower.contains('saving') &&
-        !normalizedLower.contains('hemat') &&
-        !normalizedLower.contains('item') &&
-        !normalizedLower.contains('qty')) {
-      return {'key': 'total', 'value': price};
-    }
-
-    if (_isPaidKeywordLine(normalizedLower)) {
-      return {'key': 'paid', 'value': price};
-    }
-
-    if (_containsAny(normalizedLower, [
-      'kembali',
-      'kembalian',
-      'change',
-    ])) {
-      return {'key': 'change', 'value': price};
-    }
-
-    if (_containsAny(normalizedLower, [
-      'anda hemat',
-      'total saving',
-      'saving',
-      'hemat',
-    ])) {
-      return {'key': 'savings', 'value': price};
-    }
-
-    return null;
-  }
-
-  static String? _detectSummaryKeyOnly(String line) {
-    final lower = line.toLowerCase();
-    final normalizedLower = _normalizeOcrKeyword(lower);
-    final compact = normalizedLower.replaceAll(RegExp(r'[^a-z]'), '');
-
-    if (_lastPriceInLine(line) != null) return null;
-
-    if (normalizedLower.contains('harga jual') ||
-        normalizedLower.contains('subtotal') ||
-        compact.contains('subtotal') ||
-        compact.contains('subtotali')) {
-      return 'subtotal';
-    }
-
-    if ((normalizedLower.contains('total bill') ||
-        normalizedLower.contains('total bayar') ||
-        normalizedLower.contains('total tagihan') ||
-        compact == 'total' ||
-        compact == 'totall' ||
-        compact == 'tota' ||
-        compact == 'totalbill') &&
-        !normalizedLower.contains('saving') &&
-        !normalizedLower.contains('hemat') &&
-        !normalizedLower.contains('item') &&
-        !normalizedLower.contains('qty')) {
-      return 'total';
-    }
-
-    if (_isPaidKeywordLine(normalizedLower)) {
-      return 'paid';
-    }
-
-    if (_containsAny(normalizedLower, [
-      'kembali',
-      'kembalian',
-      'change',
-    ])) {
-      return 'change';
-    }
-
-    if (_containsAny(normalizedLower, [
-      'anda hemat',
-      'total saving',
-      'saving',
-      'hemat',
-    ])) {
-      return 'savings';
-    }
-
-    return null;
-  }
-
-  static Map<String, dynamic>? _parseExtraChargeLine(String line) {
-    final lower = _normalizeOcrKeyword(line.toLowerCase());
-
-    final price = _lastPriceInLine(line);
-    if (price == null) return null;
-
-    if (_containsAny(lower, [
-      'service charge',
-      'serv. charge',
-      'serv charge',
-      'service',
-      'svc',
-    ])) {
-      return {'key': 'service', 'value': price};
-    }
-
-    if (_containsAny(lower, [
-      'tax resto',
-      'tax',
-      'pajak',
-      'ppn',
-    ])) {
-      return {'key': 'tax', 'value': price};
-    }
-
-    return null;
-  }
-
-  static String? _detectExtraChargeKeyOnly(String line) {
-    final lower = _normalizeOcrKeyword(line.toLowerCase());
-
-    if (_lastPriceInLine(line) != null) return null;
-
-    if (_containsAny(lower, [
-      'service charge',
-      'serv. charge',
-      'serv charge',
-      'service',
-      'svc',
-    ])) {
-      return 'service';
-    }
-
-    if (_containsAny(lower, [
-      'tax resto',
-      'tax',
-      'pajak',
-      'ppn',
-    ])) {
-      return 'tax';
-    }
-
-    return null;
-  }
-
-  static Map<String, dynamic>? _parseDiscountLine(String line) {
-    final lower = _normalizeOcrKeyword(line.toLowerCase());
-
-    if (!_isDiscountLine(lower)) return null;
-
-    final price = _lastPriceInLine(line);
-    if (price == null) return null;
-
-    return {
-      'label': _cleanName(
-        line.replaceAll(RegExp(r'[\d.,()\-]+$'), ''),
-      ),
-      'amount': price,
-    };
-  }
-
-  static int? _lastPriceInLine(String line) {
-    final pricePattern = _priceLikePattern();
-
-    final matches = RegExp(
-      pricePattern,
-      caseSensitive: false,
-    ).allMatches(line).toList();
-
-    if (matches.isEmpty) return null;
-
-    return _parsePrice(matches.last.group(0)!);
-  }
-
-  // =========================================================
-  // DETECTION HELPERS
-  // =========================================================
 
   static String? _detectStoreName(List<String> lines) {
-    for (final line in lines.take(10)) {
-      final lower = _normalizeOcrKeyword(line.toLowerCase());
+    for (final line in lines.take(14)) {
+      final lower = _normalizeKeyword(line);
 
-      if (_shouldSkipLine(lower)) continue;
-      if (!RegExp(r'[a-zA-Z]').hasMatch(line)) continue;
-      if (line.length < 3) continue;
+      if (lower.contains('alfamrt') || lower.contains('alfamart')) {
+        if (lower.contains('tiban')) return 'Alfamart Tiban III';
+        return 'Alfamart';
+      }
 
-      return _toTitleCase(
-        line
-            .replaceAll(RegExp(r'[_=~\-]+'), ' ')
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .trim(),
-      );
+      if (lower.contains('super mart tiban')) return 'Super Mart Tiban';
+      if (lower.contains('tlogomas')) return _toTitleCase(_removePhoneNumber(line));
+      if (lower.contains('breadtalk')) return 'BreadTalk';
+      if (lower.contains('karis jaya')) return 'Karis Jaya Shop';
+      if (lower.contains('fres gajan mada') || lower.contains('fresh gajah mada')) {
+        return 'Fresh Gajah Mada Mas';
+      }
+      if (lower.contains('indomaret') && !lower.contains('@')) return 'Indomaret';
     }
 
-    return null;
+    for (final line in lines.take(12)) {
+      final lower = _normalizeKeyword(line);
+      if (_isBadStoreLine(lower)) continue;
+      if (!RegExp(r'[a-zA-Z]').hasMatch(line)) continue;
+      return _toTitleCase(_removePhoneNumber(_cleanName(line)));
+    }
+
+    return 'Unknown Store';
+  }
+
+  static bool _isBadStoreLine(String lower) {
+    return _containsAny(lower, [
+      'jalan',
+      'jln ',
+      'jl ',
+      'rt.',
+      'rw.',
+      'blok',
+      'kec',
+      'kota',
+      'npw',
+      'npp',
+      'npwp',
+      'pt.',
+      'bon ',
+      'kasir',
+      'tgl',
+      'receipt',
+      'telp',
+    ]);
+  }
+
+  static String _removePhoneNumber(String text) {
+    return text.replaceAll(RegExp(r'\b0\d{8,}\b'), '').trim();
   }
 
   static String? _detectDate(List<String> lines) {
     for (final line in lines) {
-      // 21.01.22-18:27
-      // 31.10.24 [19:47]
-      // Tanggal :0 14-11-21
-      final dmy = RegExp(
-        r'(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\s*[-/]?\s*\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?)?',
+      final lower = _normalizeKeyword(line);
+      if (_containsAny(lower, ['npwp', 'npp', 'npw'])) continue;
+
+      // 16-06-2026 20:06:12 / Igl. 16-06-2026 20:06:12
+      final dmyDash = RegExp(
+        r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?)',
       ).firstMatch(line);
-
-      if (dmy != null) {
-        final day = dmy.group(1)!.padLeft(2, '0');
-        final month = dmy.group(2)!.padLeft(2, '0');
-        var year = dmy.group(3)!;
-        final time = dmy.group(4);
-
-        if (year.length == 2) year = '20$year';
-
-        return time == null ? '$year-$month-$day' : '$year-$month-$day $time';
+      if (dmyDash != null) {
+        return _formatDateTime(
+          dmyDash.group(3)!,
+          dmyDash.group(2)!,
+          dmyDash.group(1)!,
+          dmyDash.group(4)!,
+        );
       }
 
-      // 2025/05/09 18:19:21
-      final ymd = RegExp(
-        r'(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?',
+      // 15.05.26-19:51 / 21.01.22-18:27
+      final dmyDot = RegExp(
+        r'\b(\d{1,2})[.](\d{1,2})[.](\d{2,4})[-\s]+(\d{1,2}:\d{2}(?::\d{2})?)',
       ).firstMatch(line);
-
-      if (ymd != null) {
-        final year = ymd.group(1)!;
-        final month = ymd.group(2)!.padLeft(2, '0');
-        final day = ymd.group(3)!.padLeft(2, '0');
-        final time = ymd.group(4);
-
-        return time == null ? '$year-$month-$day' : '$year-$month-$day $time';
+      if (dmyDot != null) {
+        return _formatDateTime(
+          dmyDot.group(3)!,
+          dmyDot.group(2)!,
+          dmyDot.group(1)!,
+          dmyDot.group(4)!,
+        );
       }
 
-      // Aug 19, 2024 6:32:54 PM
-      final englishDate = RegExp(
-        r'\b([A-Za-z]{3,9})\s+(\d{1,2}),\s*(\d{4})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?)\s*(AM|PM)?)?',
+      // 09-Jun-2026 20:08.53
+      final dMonY = RegExp(
+        r'\b(\d{1,2})[-\s]([A-Za-z]{3,})[-\s](\d{2,4})\s+(\d{1,2}:\d{2}[.:]?\d{0,2})',
         caseSensitive: false,
       ).firstMatch(line);
-
-      if (englishDate != null) {
-        final monthName = englishDate.group(1)!;
-        final day = englishDate.group(2)!.padLeft(2, '0');
-        final year = englishDate.group(3)!;
-        final time = englishDate.group(4);
-        final ampm = englishDate.group(5);
-
-        final month = _monthNameToNumber(monthName);
-        if (month == null) continue;
-
-        if (time == null) {
-          return '$year-${month.toString().padLeft(2, '0')}-$day';
+      if (dMonY != null) {
+        final month = _monthToNumber(dMonY.group(2)!);
+        if (month != null) {
+          return _formatDateTime(
+            dMonY.group(3)!,
+            month.toString(),
+            dMonY.group(1)!,
+            dMonY.group(4)!.replaceAll('.', ':'),
+          );
         }
+      }
 
-        final normalizedTime = _normalizeTime(time, ampm);
-        return '$year-${month.toString().padLeft(2, '0')}-$day $normalizedTime';
+      // 2023-08-02 08:46:36
+      final ymd = RegExp(
+        r'\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?',
+      ).firstMatch(line);
+      if (ymd != null) {
+        return _formatDateTime(
+          ymd.group(1)!,
+          ymd.group(2)!,
+          ymd.group(3)!,
+          ymd.group(4) ?? '00:00',
+        );
       }
     }
 
     return null;
   }
 
-  static int? _monthNameToNumber(String monthName) {
-    final m = monthName.toLowerCase();
+  static String _formatDateTime(String yearRaw, String monthRaw, String dayRaw, String timeRaw) {
+    var year = int.tryParse(yearRaw) ?? 0;
+    final month = int.tryParse(monthRaw) ?? 1;
+    final day = int.tryParse(dayRaw) ?? 1;
 
-    if (m.startsWith('jan')) return 1;
-    if (m.startsWith('feb')) return 2;
-    if (m.startsWith('mar')) return 3;
-    if (m.startsWith('apr')) return 4;
-    if (m.startsWith('may')) return 5;
-    if (m.startsWith('jun')) return 6;
-    if (m.startsWith('jul')) return 7;
-    if (m.startsWith('aug')) return 8;
-    if (m.startsWith('sep')) return 9;
-    if (m.startsWith('oct')) return 10;
-    if (m.startsWith('nov')) return 11;
-    if (m.startsWith('dec')) return 12;
+    if (year < 100) year += 2000;
+
+    var time = timeRaw.trim().replaceAll('.', ':');
+    if (RegExp(r'^\d{1,2}:\d{2}$').hasMatch(time)) time = '$time:00';
+
+    final y = year.toString().padLeft(4, '0');
+    final m = month.toString().padLeft(2, '0');
+    final d = day.toString().padLeft(2, '0');
+    return '$y-$m-$d $time';
+  }
+
+  static int? _monthToNumber(String raw) {
+    final m = raw.toLowerCase();
+    const months = {
+      'jan': 1,
+      'january': 1,
+      'feb': 2,
+      'february': 2,
+      'mar': 3,
+      'march': 3,
+      'apr': 4,
+      'april': 4,
+      'may': 5,
+      'mei': 5,
+      'jun': 6,
+      'june': 6,
+      'jul': 7,
+      'july': 7,
+      'aug': 8,
+      'agu': 8,
+      'agustus': 8,
+      'sep': 9,
+      'sept': 9,
+      'oct': 10,
+      'okt': 10,
+      'nov': 11,
+      'dec': 12,
+      'des': 12,
+    };
+    return months[m];
+  }
+
+  static Map<String, int> _detectReceiptZones(List<String> lines) {
+    int itemStart = -1;
+    int itemEnd = lines.length;
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final lower = _normalizeKeyword(line);
+
+      if (itemStart == -1 && _isTransactionStartMarker(line, lower)) {
+        itemStart = i + 1;
+      }
+    }
+
+    if (itemStart == -1 || itemStart >= lines.length) {
+      for (int i = 0; i < lines.length; i++) {
+        if (_looksLikeItemRow(lines[i]) || _looksLikeLooseProductName(lines[i])) {
+          itemStart = i;
+          break;
+        }
+      }
+    }
+
+    if (itemStart == -1) itemStart = 0;
+
+    for (int i = itemStart; i < lines.length; i++) {
+      final lower = _normalizeKeyword(lines[i]);
+      if (_isFooterStart(lower)) {
+        itemEnd = i;
+        break;
+      }
+    }
+
+    return {'itemStart': itemStart, 'itemEnd': itemEnd};
+  }
+
+  static bool _isTransactionStartMarker(String line, String lower) {
+    if (lower.startsWith('bon ') || lower.contains(' bon ')) return true;
+    if (lower.startsWith('tgl') || lower.startsWith('igl')) return true;
+    if (RegExp(r'\b\d{1,2}[.]\d{1,2}[.]\d{2,4}[-\s]+\d{1,2}:\d{2}').hasMatch(line)) return true;
+    if (RegExp(r'\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\s+\d{1,2}:\d{2}').hasMatch(line)) return true;
+    if (RegExp(r'\b\d{1,2}[-\s][A-Za-z]{3,}[-\s]\d{2,4}\s+\d{1,2}:\d{2}').hasMatch(line)) return true;
+    return false;
+  }
+
+  static bool _isFooterStart(String lower) {
+    if (lower.contains('total iten') || lower.contains('total item')) return true;
+    if (lower.contains('total belanja')) return true;
+    if (lower.startsWith('total ') || lower == 'total :' || lower == 'total') return true;
+    if (lower.contains('harga jual')) return true;
+    if (lower.startsWith('tunai') || lower.startsWith('cash')) return true;
+    if (lower.startsWith('kembali') || lower.startsWith('kenbal') || lower.startsWith('kembal')) return true;
+    if (lower.contains('layanan konsumen')) return true;
+    if (lower.contains('kritik') || lower.contains('saran')) return true;
+    if (lower.contains('sms') && lower.contains('wa')) return true;
+    if (lower.contains('terima kasih')) return true;
+    if (lower.contains('thank you')) return true;
+    return false;
+  }
+
+  // =========================================================
+  // ITEM PARSING
+  // =========================================================
+
+  static List<Map<String, dynamic>> _parseItemsFromZone(
+      List<String> lines,
+      int itemStart,
+      int itemEnd,
+      ) {
+    final items = <Map<String, dynamic>>[];
+    String? pendingName;
+    String? pendingCode;
+
+    for (int i = itemStart; i < itemEnd; i++) {
+      final line = _normalizeText(lines[i]);
+      final lower = _normalizeKeyword(line);
+
+      if (line.length < 2) continue;
+
+      if (_isDiscountLine(lower)) {
+        pendingName = null;
+        pendingCode = null;
+        continue;
+      }
+
+      if (_isIgnoredMinimarketCharge(lower)) {
+        pendingName = null;
+        pendingCode = null;
+        continue;
+      }
+
+      // Kalau ada pendingName, line angka/barcode/detail tetap harus diberi kesempatan
+      // untuk menjadi detail item. Jadi filter non-item hanya dipakai ketika tidak ada pending.
+      if (_isDefinitelyNotItemLine(line) && pendingName == null) {
+        pendingName = null;
+        pendingCode = null;
+        continue;
+      }
+
+      final barcodeDetail = _parseBarcodeDetailLine(line);
+      if (barcodeDetail != null) {
+        if (pendingName != null) {
+          final item = _buildItem(
+            name: pendingName!,
+            quantity: barcodeDetail['quantity'] as int,
+            unitPrice: barcodeDetail['unit_price'] as int,
+            lineTotal: barcodeDetail['line_total'] as int,
+            code: barcodeDetail['barcode'] as String?,
+          );
+          if (item != null) items.add(item);
+        }
+        pendingName = null;
+        pendingCode = null;
+        continue;
+      }
+
+      if (pendingName != null) {
+        final detail = _parsePlainQtyUnitTotalDetailLine(line);
+        if (detail != null) {
+          final item = _buildItem(
+            name: pendingName!,
+            quantity: detail['quantity'] as int,
+            unitPrice: detail['unit_price'] as int,
+            lineTotal: detail['line_total'] as int,
+            code: pendingCode,
+          );
+          if (item != null) items.add(item);
+          pendingName = null;
+          pendingCode = null;
+          continue;
+        }
+
+        final priceOnly = _parseMoneyFromLine(line);
+        if (_isOnlyMoneyLine(line) && priceOnly != null && _isValidItemPrice(priceOnly)) {
+          final item = _buildItem(
+            name: pendingName!,
+            quantity: 1,
+            unitPrice: priceOnly,
+            lineTotal: priceOnly,
+            code: pendingCode,
+          );
+          if (item != null) items.add(item);
+          pendingName = null;
+          pendingCode = null;
+          continue;
+        }
+      }
+
+      if (_isDefinitelyNotItemLine(line)) {
+        pendingName = null;
+        pendingCode = null;
+        continue;
+      }
+
+      final parsedItem = _parseMinimarketItemLine(line);
+      if (parsedItem != null) {
+        // Kalau sebelumnya ada nama produk terpotong, gabungkan.
+        // Contoh Super Mart: EXCEL CAT... lalu CHICKEN&TUNA 500GR 26,000.
+        if (pendingName != null && pendingName!.isNotEmpty) {
+          final mergedName = _toTitleCase(
+            _normalizeProductNameSmart(_cleanName("$pendingName ${parsedItem['name']}")),
+          );
+          parsedItem['name'] = mergedName;
+          parsedItem['category'] = _guessCategory(mergedName);
+        }
+
+        // Kalau line berikutnya cuma angka yang sama dengan total, lewati.
+        if (i + 1 < itemEnd && _isOnlyMoneyLine(lines[i + 1])) {
+          final nextPrice = _parseMoneyFromLine(lines[i + 1]);
+          if (nextPrice != null && (nextPrice - (parsedItem['line_total'] as int)).abs() <= 50) {
+            i++;
+          }
+        }
+
+        // Kalau line berikutnya barcode/PCS detail yang cocok, pakai barcode dari sana.
+        if (i + 1 < itemEnd) {
+          final nextDetail = _parseBarcodeDetailLine(lines[i + 1]);
+          if (nextDetail != null) {
+            final detailTotal = nextDetail['line_total'] as int;
+            final currentTotal = parsedItem['line_total'] as int;
+            if ((detailTotal - currentTotal).abs() <= 1000) {
+              parsedItem['code'] = nextDetail['barcode'];
+              parsedItem['quantity'] = nextDetail['quantity'];
+              parsedItem['price'] = nextDetail['unit_price'];
+              parsedItem['line_total'] = detailTotal;
+              i++;
+            }
+          }
+        }
+
+        items.add(parsedItem);
+        pendingName = null;
+        pendingCode = null;
+        continue;
+      }
+
+      final codeName = _extractCodeAndName(line);
+      final candidateName = codeName['name'] ?? '';
+      if (_looksLikeLooseProductName(candidateName)) {
+        pendingName = candidateName;
+        pendingCode = codeName['code'];
+      } else {
+        pendingName = null;
+        pendingCode = null;
+      }
+    }
+
+    return items;
+  }
+
+  static Map<String, dynamic>? _parseMinimarketItemLine(String line) {
+    final clean = _normalizeText(line);
+    final lower = _normalizeKeyword(clean);
+
+    if (clean.length < 3) return null;
+    if (!RegExp(r'[a-zA-Z]').hasMatch(clean)) return null;
+    if (_isDefinitelyNotItemLine(clean)) return null;
+    if (_isDiscountLine(lower)) return null;
+    if (_isIgnoredMinimarketCharge(lower)) return null;
+    if (_parseBarcodeDetailLine(clean) != null) return null;
+
+    final tokens = clean.split(' ').where((e) => e.trim().isNotEmpty).toList();
+    if (tokens.length < 2) return null;
+
+    // Pattern 1: nama qty unit total
+    // GO_DA COFF.DOL E 200 1 4300 4,300
+    // ID4 KTG PLSTK IW BSR 1 500 500
+    // NUTRIJEL PHD.STRW.15 2 6600 13,200
+    if (tokens.length >= 4) {
+      final qtyToken = tokens[tokens.length - 3];
+      final unitToken = tokens[tokens.length - 2];
+      final totalToken = tokens[tokens.length - 1];
+
+      final qty = _parsePureInt(qtyToken);
+      final unitPrice = _parseMoneyToken(unitToken);
+      final lineTotal = _parseMoneyToken(totalToken);
+
+      if (qty != null &&
+          _isValidQty(qty) &&
+          unitPrice != null &&
+          lineTotal != null &&
+          _isValidItemPrice(unitPrice) &&
+          _isValidItemPrice(lineTotal) &&
+          (qty * unitPrice - lineTotal).abs() <= 1000) {
+        final rawName = tokens.sublist(0, tokens.length - 3).join(' ');
+        return _buildItem(
+          name: rawName,
+          quantity: qty,
+          unitPrice: unitPrice,
+          lineTotal: lineTotal,
+        );
+      }
+    }
+
+    // Pattern 2: nama qty total
+    // INDOMIE GPRKOSG 1 3,900
+    if (tokens.length >= 3) {
+      final qtyToken = tokens[tokens.length - 2];
+      final totalToken = tokens[tokens.length - 1];
+
+      final qty = _parsePureInt(qtyToken);
+      final lineTotal = _parseMoneyToken(totalToken);
+
+      if (qty != null &&
+          _isValidQty(qty) &&
+          lineTotal != null &&
+          _isValidItemPrice(lineTotal)) {
+        final rawName = tokens.sublist(0, tokens.length - 2).join(' ');
+        final unitPrice = qty > 1 ? (lineTotal / qty).round() : lineTotal;
+        return _buildItem(
+          name: rawName,
+          quantity: qty,
+          unitPrice: unitPrice,
+          lineTotal: lineTotal,
+        );
+      }
+    }
+
+    // Pattern 3: compact qty+unit di satu token.
+    // KNZLER SNGL.ES KJU 65 18700 8,700 => 1 x 8700.
+    if (tokens.length >= 3) {
+      final compactToken = _digitsOnly(tokens[tokens.length - 2]);
+      final totalToken = tokens[tokens.length - 1];
+      final lineTotal = _parseMoneyToken(totalToken);
+
+      if (compactToken.length >= 5 && compactToken.length <= 6 && lineTotal != null) {
+        final qty = int.tryParse(compactToken.substring(0, 1));
+        final unitPrice = int.tryParse(compactToken.substring(1));
+        if (qty != null &&
+            unitPrice != null &&
+            _isValidQty(qty) &&
+            _isValidItemPrice(unitPrice) &&
+            (qty * unitPrice - lineTotal).abs() <= 1000) {
+          final rawName = tokens.sublist(0, tokens.length - 2).join(' ');
+          return _buildItem(
+            name: rawName,
+            quantity: qty,
+            unitPrice: unitPrice,
+            lineTotal: lineTotal,
+          );
+        }
+      }
+    }
+
+    // Pattern 4: nama + harga pecah di akhir.
+    // TISSU MONTISS SOFTPACK 200'S BIG1 12 500 => 12.500
+    if (tokens.length >= 3) {
+      final a = _digitsOnly(tokens[tokens.length - 2]);
+      final b = _digitsOnly(tokens[tokens.length - 1]);
+      if (_parsePureInt(tokens[tokens.length - 2]) != null &&
+          _parsePureInt(tokens[tokens.length - 1]) != null &&
+          a.length >= 1 &&
+          a.length <= 3 &&
+          b.length == 3) {
+        final price = int.tryParse('$a$b');
+        if (price != null && _isValidItemPrice(price)) {
+          final rawName = tokens.sublist(0, tokens.length - 2).join(' ');
+          if (_looksLikeLooseProductName(rawName)) {
+            return _buildItem(
+              name: rawName,
+              quantity: 1,
+              unitPrice: price,
+              lineTotal: price,
+            );
+          }
+        }
+      }
+    }
+
+    // Pattern 5: nama + harga satu baris.
+    // MAKARIZO HE SHP ROYAL JELLY 10ML 12'S 11,000
+    // CHICKEN&TUNA 500GR 26,000
+    final lastPrice = _parseMoneyToken(tokens.last);
+    if (lastPrice != null && _isValidItemPrice(lastPrice)) {
+      final rawName = tokens.sublist(0, tokens.length - 1).join(' ');
+      if (_looksLikeLooseProductName(rawName)) {
+        return _buildItem(
+          name: rawName,
+          quantity: 1,
+          unitPrice: lastPrice,
+          lineTotal: lastPrice,
+        );
+      }
+    }
 
     return null;
   }
 
-  static String _normalizeTime(String time, String? ampm) {
-    final parts = time.split(':');
-
-    int hour = int.tryParse(parts[0]) ?? 0;
-    final minute = parts.length > 1 ? parts[1] : '00';
-    final second = parts.length > 2 ? parts[2] : '00';
-
-    final period = ampm?.toLowerCase();
-
-    if (period == 'pm' && hour < 12) {
-      hour += 12;
-    }
-
-    if (period == 'am' && hour == 12) {
-      hour = 0;
-    }
-
-    return '${hour.toString().padLeft(2, '0')}:$minute:$second';
-  }
-
-  static bool _looksLikeProductName(String line) {
+  static Map<String, dynamic>? _parsePlainQtyUnitTotalDetailLine(String line) {
     final clean = _normalizeText(line);
-    final lower = _normalizeOcrKeyword(clean.toLowerCase());
+    final tokens = clean.split(' ').where((e) => e.trim().isNotEmpty).toList();
 
-    if (clean.length < 3) return false;
-    if (_shouldSkipLine(lower)) return false;
-    if (_isDiscountLine(lower)) return false;
-    if (_isHardFooterStarter(lower)) return false;
-    if (_isOnlyPrice(clean)) return false;
-
-    if (!RegExp(r'[a-zA-Z]').hasMatch(clean)) return false;
-
-    final letterCount = RegExp(r'[a-zA-Z]').allMatches(clean).length;
-    if (letterCount < 3) return false;
-
-    if (_containsAny(lower, [
-      'jl ',
-      'jl.',
-      'jalan',
-      'raya',
-      'rt.',
-      'rw.',
-      'kel ',
-      'kec ',
-      'kab ',
-      'kota',
-      'npwp',
-      'telp',
-      'tlp',
-      'phone',
-      'kasir',
-      'cashier',
-      'server',
-      'pelayan',
-      'trans',
-      'receipt',
-      'nota',
-      'waktu',
-      'tanggal',
-      'jam :',
-      'salinan pelanggan',
-      'layanan konsumen',
-      'customer service',
-      'print cnt',
-      'printed',
-      'pos:',
-      'pax:',
-      'tbl ',
-      'table',
-      'no.meja',
-      'jumlah tamu',
-      'stru',
-      'konm',
-    ])) {
-      return false;
+    // 1 4,500 4,500
+    if (tokens.length == 3) {
+      final qty = _parsePureInt(tokens[0]);
+      final unitPrice = _parseMoneyToken(tokens[1]);
+      final lineTotal = _parseMoneyToken(tokens[2]);
+      if (qty != null &&
+          unitPrice != null &&
+          lineTotal != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice) &&
+          _isValidItemPrice(lineTotal) &&
+          (qty * unitPrice - lineTotal).abs() <= 1000) {
+        return {'quantity': qty, 'unit_price': unitPrice, 'line_total': lineTotal};
+      }
     }
 
-    return true;
+    // 1 200 => qty 1 harga 200, bukan 1200.
+    if (tokens.length == 2) {
+      final qty = _parsePureInt(tokens[0]);
+      final unitPrice = _parseMoneyToken(tokens[1]);
+      if (qty != null &&
+          unitPrice != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice)) {
+        return {'quantity': qty, 'unit_price': unitPrice, 'line_total': qty * unitPrice};
+      }
+    }
+
+    return null;
   }
 
-  static Map<String, String?> _extractCodeAndName(String line) {
+  static Map<String, dynamic>? _parseBarcodeDetailLine(String line) {
     final clean = _normalizeText(line);
 
-    final match = RegExp(r'^(\d{5,})\s+(.+)$').firstMatch(clean);
+    final withBarcode = RegExp(
+      r'^(\d{6,})\s+(?:(\d{1,3})\s+)?(?:PCS|PC|BKS|BTL|KG|GR|BOX|PACK|PCK|IKT|KLG)\s*[xX]\s*([\d.,\s]+)$',
+      caseSensitive: false,
+    ).firstMatch(clean);
 
-    if (match != null) {
-      return {
-        'code': match.group(1),
-        'name': _cleanName(match.group(2)!),
-      };
+    if (withBarcode != null) {
+      final barcode = withBarcode.group(1);
+      final qty = int.tryParse(withBarcode.group(2) ?? '1') ?? 1;
+      final unitPrice = _parseMoneyFromLine(withBarcode.group(3) ?? '');
+      if (unitPrice != null && _isValidQty(qty) && _isValidItemPrice(unitPrice)) {
+        return {
+          'barcode': barcode,
+          'quantity': qty,
+          'unit_price': unitPrice,
+          'line_total': qty * unitPrice,
+        };
+      }
     }
 
-    return {
-      'code': null,
-      'name': _cleanName(clean),
-    };
+    final noBarcode = RegExp(
+      r'^(?:(\d{1,3})\s+)?(?:PCS|PC|BKS|BTL|KG|GR|BOX|PACK|PCK|IKT|KLG)\s*[xX]\s*([\d.,\s]+)$',
+      caseSensitive: false,
+    ).firstMatch(clean);
+
+    if (noBarcode != null) {
+      final qty = int.tryParse(noBarcode.group(1) ?? '1') ?? 1;
+      final unitPrice = _parseMoneyFromLine(noBarcode.group(2) ?? '');
+      if (unitPrice != null && _isValidQty(qty) && _isValidItemPrice(unitPrice)) {
+        return {
+          'barcode': null,
+          'quantity': qty,
+          'unit_price': unitPrice,
+          'line_total': qty * unitPrice,
+        };
+      }
+    }
+
+    return null;
   }
-
-  static bool _isHardFooterStarter(String lower) {
-    return _containsAny(lower, [
-      'terima kasih',
-      'terimakasih',
-      'thank you',
-      'please come again',
-      'thank you for visit',
-      'closed bill',
-      'layanan konsumen',
-      'customer service',
-      'printed',
-      'print(',
-      'hanya untuk penagihan',
-      'bukan bukti bayar',
-    ]);
-  }
-
-  static bool _isDiscountLine(String lower) {
-    return _containsAny(lower, [
-      'vc ',
-      'voucher',
-      'discount',
-      'diskon',
-      'saving',
-      'hemat',
-      'potongan',
-      'rounding',
-    ]);
-  }
-
-  static bool _isPaidKeywordLine(String lower) {
-    final text = lower.toLowerCase();
-
-    if (text.contains('cashier')) return false;
-    if (text.contains('kasir')) return false;
-
-    return RegExp(r'\btunai\b').hasMatch(text) ||
-        RegExp(r'\bcash\b').hasMatch(text) ||
-        text.contains('non tunai') ||
-        RegExp(r'\bdebit\b').hasMatch(text) ||
-        RegExp(r'\bkredit\b').hasMatch(text) ||
-        RegExp(r'\bdibayar\b').hasMatch(text) ||
-        RegExp(r'\bbayar\b').hasMatch(text) ||
-        text.contains('payment') ||
-        text.contains('total payment');
-  }
-
-  static bool _shouldSkipLine(String lower) {
-    return _containsAny(lower, [
-      // header / POS
-      'npwp',
-      'kasir',
-      'cashier',
-      'server',
-      'pelayan',
-      'trans',
-      'receipt no',
-      'receipt',
-      'nota',
-      'struk',
-      'invoice',
-      'waktu',
-      'tanggal',
-      'date',
-      'time',
-      'jam :',
-      'print cnt',
-      'printed',
-      'closed',
-      'salinan pelanggan',
-      'pos:',
-      'pax:',
-      'tbl ',
-      'table',
-      'no.meja',
-      'jumlah tamu',
-
-      // address / store identity
-      'jl.',
-      'jl ',
-      'jalan',
-      'raya',
-      'rt.',
-      'rw.',
-      'kel ',
-      'kec ',
-      'kab ',
-      'kota',
-      'telp',
-      'tlp',
-      'hp ',
-      'wa ',
-      'email',
-      'ig :',
-      'www',
-      'ruko',
-      'outlet',
-
-      // summary / non item
-      'subtotal',
-      'sub total',
-      'sub totali',
-      'harga jual',
-      'total item',
-      'total qty',
-      'tota1 item',
-      'tota1 qty',
-      'total bayar',
-      'total tagihan',
-      'total bill',
-      'grand total',
-      'tunai',
-      'cash ',
-      'debit',
-      'kredit',
-      'kembali',
-      'change',
-      'ppn',
-      'dpp',
-      'pajak',
-      'tax',
-      'service charge',
-      'serv. charge',
-      'layanan konsumen',
-      'customer service',
-      'terima kasih',
-      'terimakasih',
-      'thank you',
-      'kunjungan',
-      'closed bill',
-      'anda hemat',
-      'product discount',
-      'total saving',
-      'points',
-      'approval',
-      'cardid',
-      'holder',
-      'hanya untuk penagihan',
-      'bukan bukti bayar',
-    ]);
-  }
-
-  // =========================================================
-  // ITEM BUILDING
-  // =========================================================
 
   static Map<String, dynamic>? _buildItem({
     required String name,
@@ -1357,399 +842,612 @@ class OcrService {
     required int lineTotal,
     String? code,
   }) {
-    final cleanName = _cleanName(name);
+    var cleanName = _cleanName(name);
+    cleanName = _normalizeProductNameSmart(cleanName);
+    cleanName = _toTitleCase(cleanName);
 
     if (cleanName.isEmpty) return null;
+    if (!_looksLikeLooseProductName(cleanName)) return null;
     if (!_isValidQty(quantity)) return null;
     if (!_isValidItemPrice(unitPrice)) return null;
     if (!_isValidItemPrice(lineTotal)) return null;
 
-    final item = <String, dynamic>{
-      'name': _toTitleCase(cleanName),
+    return {
+      'name': cleanName,
       'price': unitPrice,
       'quantity': quantity,
       'line_total': lineTotal,
       'category': _guessCategory(cleanName),
+      if (code != null && code.trim().isNotEmpty) 'code': code,
     };
-
-    if (code != null && code.trim().isNotEmpty) {
-      item['code'] = code;
-    }
-
-    return item;
   }
 
-  static List<Map<String, dynamic>> _mergeDuplicateItems(
-      List<Map<String, dynamic>> items,
-      ) {
-    final merged = <String, Map<String, dynamic>>{};
+  // =========================================================
+  // SUMMARY / DISCOUNT
+  // =========================================================
 
-    for (final item in items) {
-      final key = item['name'].toString().toLowerCase();
+  static Map<String, int?> _parseSummaryFromBottom(List<String> lines) {
+    int? subtotal;
+    int? total;
+    int? paid;
+    int? change;
+    int? savings;
+    int? tax;
+    int? serviceCharge;
 
-      if (!merged.containsKey(key)) {
-        merged[key] = Map<String, dynamic>.from(item);
-      } else {
-        final oldQty = merged[key]!['quantity'] as int;
-        final newQty = item['quantity'] as int;
+    for (int i = 0; i < lines.length; i++) {
+      final line = _normalizeText(lines[i]);
+      final lower = _normalizeKeyword(line);
 
-        final oldTotal = merged[key]!['line_total'] as int;
-        final newTotal = item['line_total'] as int;
+      if (lower.contains('total disc')) {
+        savings ??= _valueOnSameOrNext(lines, i);
+        continue;
+      }
 
-        merged[key]!['quantity'] = oldQty + newQty;
-        merged[key]!['line_total'] = oldTotal + newTotal;
+      if (_isDiscountLine(lower)) {
+        final discount = _parseDiscountAmount(line);
+        if (discount != null && discount > 0) savings = (savings ?? 0) + discount;
+        continue;
+      }
 
-        final totalQty = merged[key]!['quantity'] as int;
+      if ((lower.contains('harga jual') || lower.contains('subtotal')) && !lower.contains('item')) {
+        subtotal = _valueOnSameOrNext(lines, i) ?? subtotal;
+        continue;
+      }
 
-        if (totalQty > 0) {
-          merged[key]!['price'] =
-              ((merged[key]!['line_total'] as int) / totalQty).round();
+      if (_isTotalLabel(lower)) {
+        total = _valueOnSameOrNext(lines, i) ?? total;
+        continue;
+      }
+
+      if (lower.startsWith('tunai') || lower.startsWith('cash')) {
+        paid = _valueOnSameOrNext(lines, i) ?? paid;
+        continue;
+      }
+
+      if (lower.startsWith('kembali') || lower.startsWith('kenbal') || lower.startsWith('kembal')) {
+        change = _valueOnSameOrNext(lines, i) ?? change;
+        continue;
+      }
+
+      if (lower.contains('ppn')) {
+        final ppnMatch = RegExp(r'ppn\s*[=:]?\s*([\d.,\s]+)', caseSensitive: false).firstMatch(line);
+        final value = ppnMatch != null ? _parseMoneyFromLine(ppnMatch.group(1) ?? '') : null;
+        if (value != null) tax = value;
+      }
+    }
+
+    return {
+      'subtotal': subtotal,
+      'total': total,
+      'paid': paid,
+      'change': change,
+      'savings': savings,
+      'tax': tax,
+      'service_charge': serviceCharge,
+    };
+  }
+
+  static bool _isTotalLabel(String lower) {
+    if (lower.contains('total item') || lower.contains('total iten')) return false;
+    if (lower.contains('total disc')) return false;
+    if (lower.contains('total belanja')) return true;
+    if (lower.startsWith('total')) return true;
+    return false;
+  }
+
+  static int? _valueOnSameOrNext(List<String> lines, int index) {
+    final same = _parseMoneyFromLine(lines[index]);
+    if (same != null && same > 0) return same;
+
+    for (int j = index + 1; j < lines.length && j <= index + 4; j++) {
+      final lower = _normalizeKeyword(lines[j]);
+      if (_isHardLabelOnly(lower)) continue;
+      final value = _parseMoneyFromLine(lines[j]);
+      if (value != null && value > 0) return value;
+    }
+
+    return null;
+  }
+
+  static bool _isHardLabelOnly(String lower) {
+    return lower == 'total belanja' ||
+        lower == 'tunai' ||
+        lower == 'cash' ||
+        lower == 'kembali' ||
+        lower == 'kembalian' ||
+        lower == 'kenbal ian' ||
+        lower == 'total disc.' ||
+        lower == 'total disc';
+  }
+
+  static List<Map<String, dynamic>> _parseDiscounts(List<String> lines) {
+    final discounts = <Map<String, dynamic>>[];
+    for (final line in lines) {
+      final lower = _normalizeKeyword(line);
+      if (_isDiscountLine(lower) || lower.contains('total disc')) {
+        final amount = _parseDiscountAmount(line);
+        if (amount != null && amount > 0) {
+          discounts.add({'label': 'Discount', 'amount': amount});
         }
       }
     }
-
-    return merged.values.toList();
+    return discounts;
   }
 
-  static int _sumItemTotals(List<Map<String, dynamic>> items) {
-    int total = 0;
+  static bool _isDiscountLine(String lower) {
+    return lower.contains('disc') ||
+        lower.contains('diskon') ||
+        lower.contains('voucher') ||
+        lower.startsWith('vc ');
+  }
 
-    for (final item in items) {
-      final lineTotal = item['line_total'];
-      final price = item['price'];
-      final qty = item['quantity'];
+  static int? _parseDiscountAmount(String line) {
+    final match = RegExp(r'-\s*([\d.,\s]+)').firstMatch(line);
+    if (match != null) return _parseMoneyFromLine(match.group(1) ?? '');
+    return _parseMoneyFromLine(line);
+  }
 
-      if (lineTotal is int) {
-        total += lineTotal;
-      } else if (price is int && qty is int) {
-        total += price * qty;
+  static int? _sumDiscounts(List<Map<String, dynamic>> discounts) {
+    if (discounts.isEmpty) return null;
+    var total = 0;
+    for (final discount in discounts) {
+      final amount = discount['amount'];
+      if (amount is int) total += amount;
+    }
+    return total > 0 ? total : null;
+  }
+
+  // =========================================================
+  // AMBIGUOUS ITEMS
+  // =========================================================
+
+  static List<Map<String, dynamic>> _collectAmbiguousItemsFromZone(
+      List<String> lines,
+      int itemStart,
+      int itemEnd,
+      List<Map<String, dynamic>> detectedItems,
+      ) {
+    final ambiguous = <Map<String, dynamic>>[];
+    String? pendingName;
+
+    for (int i = itemStart; i < itemEnd; i++) {
+      final line = _normalizeText(lines[i]);
+      final lower = _normalizeKeyword(line);
+
+      if (line.length < 2) continue;
+      if (_isDiscountLine(lower)) continue;
+      if (_isIgnoredMinimarketCharge(lower)) continue;
+      if (_isDefinitelyNotItemLine(line)) continue;
+
+      final parsed = _parseMinimarketItemLine(line);
+      if (parsed != null) {
+        parsed['raw_text'] = line;
+        if (!_alreadyExists(detectedItems, parsed) && !_alreadyExists(ambiguous, parsed)) {
+          ambiguous.add(_toAmbiguousItem(
+            rawText: line,
+            candidate: parsed,
+            reason: 'Item-like OCR line found in item zone but not confirmed.',
+            confidence: 0.62,
+          ));
+        }
+        pendingName = null;
+        continue;
+      }
+
+      if (pendingName != null) {
+        final detail = _parsePlainQtyUnitTotalDetailLine(line) ?? _parseBarcodeDetailLine(line);
+        if (detail != null) pendingName = null;
+      }
+
+      if (_looksLikeLooseProductName(line)) {
+        pendingName = _cleanName(line);
+      } else {
+        pendingName = null;
       }
     }
 
+    return ambiguous;
+  }
+
+  static Map<String, dynamic> _toAmbiguousItem({
+    required String rawText,
+    required Map<String, dynamic> candidate,
+    required String reason,
+    required double confidence,
+  }) {
+    return {
+      'raw_text': rawText,
+      'suggested_name': candidate['name'],
+      'suggested_price': candidate['price'],
+      'suggested_quantity': candidate['quantity'],
+      'suggested_line_total': candidate['line_total'],
+      'suggested_category': candidate['category'],
+      'code': candidate['code'],
+      'reason': reason,
+      'confidence': confidence,
+    };
+  }
+
+  // =========================================================
+  // VALIDATION / DUPLICATES
+  // =========================================================
+
+  static List<Map<String, dynamic>> _mergeDuplicateItems(List<Map<String, dynamic>> items) {
+    final result = <Map<String, dynamic>>[];
+
+    for (final item in items) {
+      final index = result.indexWhere((existing) => _sameItem(existing, item));
+      if (index == -1) {
+        result.add(Map<String, dynamic>.from(item));
+      } else {
+        final existing = result[index];
+        final qty = (existing['quantity'] as int) + (item['quantity'] as int);
+        final lineTotal = (existing['line_total'] as int) + (item['line_total'] as int);
+        existing['quantity'] = qty;
+        existing['line_total'] = lineTotal;
+        existing['price'] = qty > 0 ? (lineTotal / qty).round() : existing['price'];
+      }
+    }
+
+    return result;
+  }
+
+  static bool _sameItem(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final codeA = a['code']?.toString() ?? '';
+    final codeB = b['code']?.toString() ?? '';
+    if (codeA.isNotEmpty && codeB.isNotEmpty && codeA == codeB) return true;
+
+    final nameA = _nameKey(a['name']?.toString() ?? '');
+    final nameB = _nameKey(b['name']?.toString() ?? '');
+    final priceA = a['price'];
+    final priceB = b['price'];
+    return nameA == nameB && priceA == priceB;
+  }
+
+  static bool _alreadyExists(List<Map<String, dynamic>> items, Map<String, dynamic> candidate) {
+    return items.any((item) => _sameItem(item, candidate));
+  }
+
+  static int _sumItemTotals(List<Map<String, dynamic>> items) {
+    var total = 0;
+    for (final item in items) {
+      final value = item['line_total'];
+      if (value is int) total += value;
+    }
     return total;
   }
 
   static List<String> _buildWarnings({
     required List<Map<String, dynamic>> items,
-    required int total,
+    required List<Map<String, dynamic>> ambiguousItems,
+    required int? total,
     required int sumItems,
+    required int? savings,
   }) {
     final warnings = <String>[];
 
-    if (items.isEmpty) {
-      warnings.add('No items detected. Try a clearer receipt photo.');
+    if (ambiguousItems.isNotEmpty) {
+      warnings.add('${ambiguousItems.length} ambiguous item(s) need user confirmation before saving.');
     }
 
-    if (total > 0 && sumItems > 0) {
-      final diff = (total - sumItems).abs();
-
-      if (diff > 2000) {
-        warnings.add(
-          'Total receipt and item sum are different. This may be caused by tax, service charge, discount, voucher, or OCR error.',
-        );
+    if (total != null && total > 0 && items.isNotEmpty) {
+      final netItems = sumItems - (savings ?? 0);
+      final diff = (total - netItems).abs();
+      if (diff > 1000) {
+        warnings.add('Total item belum sesuai dengan total struk. Mohon periksa dan koreksi item sebelum menyimpan.');
       }
+    }
+
+    if (items.isEmpty) {
+      warnings.add('Tidak ada item yang berhasil terbaca. Mohon tambah item secara manual sebelum menyimpan.');
     }
 
     return warnings;
   }
 
   // =========================================================
-  // NORMALIZATION
+  // FILTERS
   // =========================================================
 
-  static String _normalizeText(String text) {
-    return text
-        .replaceAll('|', ' ')
-        .replaceAll('—', '-')
-        .replaceAll('–', '-')
-        .replaceAll('：', ':')
-        .replaceAll('；', ':')
-        .replaceAll(']ease', 'lease')
-        .replaceAll('Â', 'A')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+  static bool _isDefinitelyNotItemLine(String line) {
+    final lower = _normalizeKeyword(line);
+
+    if (_isOnlyMoneyLine(line)) return true;
+    if (_isFooterStart(lower)) return true;
+    if (_isTotalLabel(lower)) return true;
+    if (_containsAny(lower, [
+      'alamat',
+      'jalan ',
+      'jln ',
+      'jl ',
+      'rt.',
+      'rw.',
+      'blok',
+      'kec:',
+      'kec.',
+      'kota ',
+      'batam',
+      'npwp',
+      'npw:',
+      'npp',
+      'pt.',
+      'kasir',
+      'receipt',
+      'telp',
+      'sms',
+      'wa:',
+      'kritik',
+      'saran',
+      'layanan',
+      'konsumen',
+      'email',
+      '@',
+      'bon ',
+      'tgl ',
+      'igl.',
+    ])) {
+      return true;
+    }
+
+    // Baris nomor pajak/kode panjang tanpa konteks produk.
+    if (!RegExp(r'[a-zA-Z]').hasMatch(line)) return true;
+
+    return false;
   }
 
-  static String _normalizeOcrKeyword(String text) {
-    return text
-        .toLowerCase()
-        .replaceAll('0', 'o')
-        .replaceAll('1', 'l')
-        .replaceAll('i', 'l');
+  static bool _isIgnoredMinimarketCharge(String lower) {
+    return lower.contains('kp rad') ||
+        lower.contains('kp branding') ||
+        lower.contains('branding') ||
+        lower.contains('rad g') ||
+        lower.contains('radig');
+  }
+
+  static bool _looksLikeItemRow(String line) {
+    if (_isDefinitelyNotItemLine(line)) return false;
+    return _parseMinimarketItemLine(line) != null;
+  }
+
+  static bool _looksLikeLooseProductName(String line) {
+    final clean = _cleanName(line);
+    final lower = _normalizeKeyword(clean);
+
+    if (clean.length < 3) return false;
+    if (!RegExp(r'[a-zA-Z]').hasMatch(clean)) return false;
+    if (_isDefinitelyNotItemLine(clean)) return false;
+    if (_isDiscountLine(lower)) return false;
+    if (_isIgnoredMinimarketCharge(lower)) return false;
+
+    final letters = RegExp(r'[a-zA-Z]').allMatches(clean).length;
+    if (letters < 3) return false;
+
+    return true;
+  }
+
+  // =========================================================
+  // MONEY / NUMBER HELPERS
+  // =========================================================
+
+  static int? _parsePureInt(String token) {
+    final raw = token.trim();
+    if (RegExp(r'[a-zA-Z]').hasMatch(raw)) return null;
+    if (raw.contains('-')) return null;
+    final digits = _digitsOnly(raw);
+    if (digits.isEmpty) return null;
+    if (!RegExp(r'^\d+$').hasMatch(digits)) return null;
+    return int.tryParse(digits);
+  }
+
+  static int? _parseMoneyToken(String token) {
+    final raw = token.trim();
+    if (raw.isEmpty) return null;
+    if (RegExp(r'[a-zA-Z]').hasMatch(raw)) return null;
+    if (raw.contains('-')) return null;
+    return _parseMoneyFromLine(raw);
+  }
+
+  static int? _parseMoneyFromLine(String text) {
+    var raw = text.trim();
+    if (raw.isEmpty) return null;
+
+    // Ambil angka uang paling kanan.
+    final matches = RegExp(r'(\d{1,3}(?:[.,]\s?\d{2,3})+|\d{3,7}|,\s?\d{3})')
+        .allMatches(raw)
+        .toList();
+    if (matches.isEmpty) return null;
+
+    var candidate = matches.last.group(0) ?? '';
+    candidate = candidate.trim();
+
+    // OCR Alfamart: 10, 00 harusnya 10,000.
+    final brokenTwoDigits = RegExp(r'^(\d{2})\s*,\s*(\d{2})$').firstMatch(candidate);
+    if (brokenTwoDigits != null) {
+      return int.tryParse('${brokenTwoDigits.group(1)}${brokenTwoDigits.group(2)}0');
+    }
+
+    // OCR Alfamart: ,700 kemungkinan total 7,700, tapi angka depannya hilang.
+    // Jangan paksa di sini. Nanti total diperbaiki dari sum item - diskon.
+    final digits = _digitsOnly(candidate);
+    if (digits.isEmpty) return null;
+    return int.tryParse(digits);
+  }
+
+  static bool _isOnlyMoneyLine(String line) {
+    final clean = line.trim();
+    if (clean.isEmpty) return false;
+    if (RegExp(r'[a-zA-Z]').hasMatch(clean)) return false;
+    return _parseMoneyFromLine(clean) != null;
+  }
+
+  static String _digitsOnly(String text) {
+    return text.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  static bool _isValidQty(int qty) {
+    return qty > 0 && qty <= 99;
+  }
+
+  static bool _isValidItemPrice(int value) {
+    return value >= 100 && value <= 2000000;
+  }
+
+  // =========================================================
+  // NAME / CATEGORY
+  // =========================================================
+
+  static Map<String, String?> _extractCodeAndName(String line) {
+    final clean = _normalizeText(line);
+    final match = RegExp(r'^(\d{6,})\s+(.+)$').firstMatch(clean);
+    if (match != null) {
+      return {'code': match.group(1), 'name': _cleanName(match.group(2) ?? '')};
+    }
+    return {'code': null, 'name': _cleanName(clean)};
   }
 
   static String _cleanName(String raw) {
-    var name = raw;
+    var name = raw.trim();
 
-    name = name.replaceAll(RegExp(r'\brp\b', caseSensitive: false), '');
-
-    name = name.replaceAll(RegExp(r'^\d+\.\s*'), '');
-    name = name.replaceAll(RegExp(r'^\d{5,}\s+'), '');
-
-    name = name.replaceAll(RegExp(r'\/PCS\b', caseSensitive: false), '');
-    name = name.replaceAll(RegExp(r'\/RCG\b', caseSensitive: false), '');
-    name = name.replaceAll(RegExp(r'\/PT\b', caseSensitive: false), '');
-    name = name.replaceAll(RegExp(r'\/PC\b', caseSensitive: false), '');
-
-    name = name.replaceAll('(', ' ');
-    name = name.replaceAll(')', ' ');
-
-    name = name.replaceAll(RegExp(r'[^\w\s\-./&]'), ' ');
-
-    name = name.replaceAll(RegExp(r'\bqty\b', caseSensitive: false), '');
-    name = name.replaceAll(RegExp(r'\bitem\b', caseSensitive: false), '');
-
-    name = name.replaceAll(
-      RegExp(r'\b(?:rp\s*)?[0-9]{1,3}(?:[.,]\d{3})+\b$', caseSensitive: false),
-      '',
-    );
-
+    name = name.replaceAll(RegExp(r'\bRp\b', caseSensitive: false), ' ');
+    name = name.replaceAll(RegExp(r'^\d+\.\s*'), ' ');
+    name = name.replaceAll(RegExp(r"[^a-zA-Z0-9\s_./&\-']"), ' ');
     name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-    if (RegExp(r'^[0-9\s.,/]+$').hasMatch(name)) {
-      return '';
-    }
-
-    if (name.length < 2) return '';
+    // Buang token harga di belakang jika masih tertinggal.
+    name = name.replaceAll(RegExp(r'\s+\d{1,3}([.,]\d{3})+$'), '').trim();
 
     return name;
   }
 
+  static String _normalizeProductNameSmart(String rawName) {
+    var lower = rawName.toLowerCase();
+
+    lower = lower
+        .replaceAll('_', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    lower = lower.replaceAll(RegExp(r'\bin\s*dom\s*ie\b'), 'indomie');
+    lower = lower.replaceAll(RegExp(r'\bindom\s*ie\b'), 'indomie');
+    lower = lower.replaceAll(RegExp(r'\binohie\b'), 'indomie');
+
+    lower = lower.replaceAll(RegExp(r'\bgprkgsg\b'), 'geprek85g');
+    lower = lower.replaceAll(RegExp(r'\bgprkosg\b'), 'goreng');
+    lower = lower.replaceAll(RegExp(r'\bgr\s*aym[.]?gp\b'), 'goreng ayam gp');
+    lower = lower.replaceAll(RegExp(r'\bgr\s*aym\b'), 'goreng ayam');
+
+    lower = lower.replaceAll(RegExp(r'\bgo\s*da\b'), 'golda');
+    lower = lower.replaceAll(RegExp(r'\bcoff[.]?dol\s*e\b'), 'coffee dolce');
+    lower = lower.replaceAll(RegExp(r'\bcoff[.]?dol\b'), 'coffee dolce');
+    lower = lower.replaceAll(RegExp(r'\bcof\b'), 'coffee');
+    lower = lower.replaceAll(RegExp(r'\b200m\b'), '200ml');
+
+    lower = lower.replaceAll(RegExp(r'\bbe\s*ng[-\s]*beng\b'), 'beng-beng');
+    lower = lower.replaceAll(RegExp(r'\bbeng\s*beng\b'), 'beng-beng');
+    lower = lower.replaceAll(RegExp(r'\bhaxx\b'), 'maxx');
+    if (lower.contains('beng-beng')) {
+      lower = lower.replaceAll(RegExp(r'\b326\b'), '32g');
+    }
+
+    if (lower.contains('ktg plstk') ||
+        lower.contains('plstk') ||
+        lower.contains('kantong') ||
+        RegExp(r'\bkp\b').hasMatch(lower) ||
+        RegExp(r'\bbrad!n\b').hasMatch(lower) ||
+        RegExp(r'\bbranding\b').hasMatch(lower)) {
+      return 'Kantong Plastik';
+    }
+
+    lower = lower.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return lower;
+  }
+
   static String _toTitleCase(String text) {
-    return text.toLowerCase().split(' ').map((word) {
-      if (word.isEmpty) return word;
-
-      if (RegExp(r'\d').hasMatch(word)) {
-        return word.toUpperCase();
+    return text
+        .split(' ')
+        .where((part) => part.trim().isNotEmpty)
+        .map((part) {
+      if (part.length <= 2 && RegExp(r'^[A-Za-z0-9]+$').hasMatch(part)) {
+        return part.toUpperCase();
       }
-
-      if (word.length == 1) {
-        return word.toUpperCase();
-      }
-
-      return word[0].toUpperCase() + word.substring(1);
+      return part[0].toUpperCase() + part.substring(1).toLowerCase();
     }).join(' ');
   }
 
-  // =========================================================
-  // PRICE HELPERS
-  // =========================================================
-
-  static String _priceLikePattern() {
-    return r'(?:Rp\s*)?[0-9OIlL]{1,3}(?:[.,\s]*[0-9OIlL]{3})+';
+  static String _nameKey(String text) {
+    return _normalizeKeyword(text).replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
-
-  static bool _looksLikeStandaloneNumber(String token) {
-    final clean = token
-        .replaceAll('.', '')
-        .replaceAll(',', '')
-        .trim();
-
-    if (!RegExp(r'^\d+$').hasMatch(clean)) return false;
-
-    if (RegExp(r'[a-zA-Z]').hasMatch(token)) return false;
-
-    return true;
-  }
-
-  static bool _isOnlyPrice(String line) {
-    final cleaned = _normalizePriceText(line)
-        .replaceAll(RegExp(r'rp', caseSensitive: false), '');
-
-    return RegExp(r'^[0-9]{1,3}([.,]?[0-9]{3})+$').hasMatch(cleaned) ||
-        RegExp(r'^[0-9]{3,}$').hasMatch(cleaned);
-  }
-
-  static int _parsePrice(String raw) {
-    final cleaned = _normalizePriceText(raw)
-        .replaceAll(RegExp(r'rp', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[^\d]'), '');
-
-    return int.tryParse(cleaned) ?? 0;
-  }
-
-  static String _normalizePriceText(String text) {
-    return text
-        .trim()
-        .replaceAll('O', '0')
-        .replaceAll('o', '0')
-        .replaceAll('I', '1')
-        .replaceAll('i', '1')
-        .replaceAll('l', '1')
-        .replaceAll('L', '1')
-        .replaceAll(RegExp(r'\s+'), '')
-        .replaceAll(',.', ',')
-        .replaceAll('.,', '.');
-  }
-
-  static bool _isValidItemPrice(int price) {
-    if (price < 100) return false;
-    if (price > 10000000) return false;
-    return true;
-  }
-
-  static bool _isValidQty(int qty) {
-    if (qty <= 0) return false;
-    if (qty > 999) return false;
-    return true;
-  }
-
-  // =========================================================
-  // CATEGORY GUESSER
-  // =========================================================
 
   static String _guessCategory(String name) {
-    final lower = name.toLowerCase();
+    final lower = _normalizeKeyword(name);
 
     if (_containsAny(lower, [
-      'beras',
-      'nasi',
-      'mie',
-      'mi ',
-      'indomi',
-      'indomie',
-      'pop mie',
-      'ramen',
-      'roll',
-      'sushi',
-      'salmon',
-      'katsu',
-      'teriyaki',
-      'fried rice',
-      'rice',
-      'bao',
-      'broccoli',
-      'tepung',
-      'gula',
-      'garam',
-      'minyak',
-      'roti',
-      'bread',
-      'biskuit',
-      'cookies',
-      'wafer',
-      'oreo',
-      'chitato',
-      'piattos',
-      'pocky',
-      'mentos',
-      'sambal',
-      'telur',
-      'tempe',
-      'lalapan',
-      'jengkol',
-      'bakso',
-      'sosis',
-      'kanzler',
-      'knzler',
-      'nutrijel',
-      'nutrijell',
-      'gery',
-      'slai',
-      'nabati',
-      'finna',
-      'o lai',
-    ])) {
-      return 'Pantry';
-    }
-
-    if (_containsAny(lower, [
-      'ayam',
-      'ikan',
-      'daging',
-      'sayur',
-      'buah',
-      'sate',
-      'ati',
-      'ampela',
-      'goreng',
-      'beef',
-      'chicken',
-      'fish',
-      'meat',
-    ])) {
-      return 'Fresh Food';
-    }
-
-    if (_containsAny(lower, [
-      'teh',
-      'kopi',
-      'susu',
+      'golda',
+      'coffee',
+      'cof ',
       'aqua',
-      'air',
+      'mineral',
+      'nestle pure',
       'le minerale',
-      'nestle pure life',
       'ultra',
-      'milk',
-      'juice',
-      'latte',
-      'minuman',
-      'es teh',
-      'javanna',
-      'black current',
-      'blackcurrant',
-      'bloody berry',
-      'ocha',
-      'sapporo',
+      'fruit tea',
+      'teh',
+      'susu',
     ])) {
       return 'Beverages';
     }
 
     if (_containsAny(lower, [
-      'sabun',
-      'shampoo',
-      'shampo',
-      'sampo',
-      'odol',
-      'pasta gigi',
-      'tissue',
       'tisu',
-      'vaseline',
-      'body spray',
-      'feminine wash',
-      'lip',
+      'tissue',
+      'shp',
+      'shampoo',
+      'makarizo',
+      'sabun',
+      'pasta gigi',
     ])) {
       return 'Toiletries';
     }
 
     if (_containsAny(lower, [
-      'detergen',
-      'rinso',
-      'soklin',
-      'sunlight',
-      'pembersih',
-      'karbol',
-      'cleaner',
+      'indomie',
+      'mie',
+      'pop mie',
+      'kecap',
+      'nutrijel',
+      'beng-beng',
+      'kanzler',
+      'sosis',
+      'bakso',
+      'roti',
+      'bread',
+      'snack',
     ])) {
-      return 'Cleaning Supplies';
+      return 'Pantry';
     }
 
-    if (_containsAny(lower, [
-      'carpet',
-      'karpet',
-      'pvc',
-      'pillow',
-      'bantal',
-      'slipper',
-      'mat',
-      'keset',
-      'home',
-    ])) {
-      return 'Household Items';
+    if (_containsAny(lower, ['kantong plastik', 'plastik', 'bag'])) {
+      return 'Households Items';
+    }
+
+    if (_containsAny(lower, ['cat ', 'kitten', 'chicken&tuna'])) {
+      return 'Others';
     }
 
     return 'Others';
   }
 
   // =========================================================
-  // GENERAL HELPERS
+  // COMMON HELPERS
   // =========================================================
 
   static bool _containsAny(String text, List<String> keywords) {
-    return keywords.any((keyword) => text.contains(keyword));
+    for (final keyword in keywords) {
+      if (text.contains(keyword)) return true;
+    }
+    return false;
   }
-
   static void dispose() {
-    _recognizer.close();
-  }
+  _recognizer.close();
+}
 }

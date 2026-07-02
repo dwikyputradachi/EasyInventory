@@ -17,18 +17,21 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
-  int _dashboardKey = 0;
-  int _inventoryKey = 0;
-  // Tracks which pages sudah pernah dibuka — lazy init
+  String? _initialCategory; 
   final Set<int> _visited = {0};
 
   void _openScan() async {
-    await Navigator.push(
-      context,
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => const ScanPage()),
     );
-    // Refresh dashboard setelah scan
-    setState(() {});
+  }
+
+  void _goToInventoryWithCategory(String? category) {
+    setState(() {
+      _initialCategory = category;
+      _visited.add(1);
+      _currentIndex = 1;
+    });
   }
 
   @override
@@ -55,17 +58,15 @@ class _HomePageState extends State<HomePage> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          // Dashboard selalu ada
-       DashboardPage(
-  key: ValueKey(_dashboardKey),
-  onOpenScan: _openScan,
-  onOpenInventory: () => _goTo(1),
-  onOpenShopping: () => _goTo(2),
-),
-          // Page lain hanya dibuild saat pertama kali dibuka
-       _visited.contains(1)
-    ? InventoryPage(key: ValueKey(_inventoryKey))
-    : const SizedBox.shrink(),
+          DashboardPage(
+            onOpenScan: _openScan,
+            onOpenInventory: (category) => _goToInventoryWithCategory(category),
+            onOpenShopping: () => _goTo(2),
+          ),
+          _visited.contains(1)
+              // PERBAIKAN: Biarkan InventoryPage mendeteksi parameter initialCategory tanpa merusak seluruh state widget
+              ? InventoryPage(initialCategory: _initialCategory) 
+              : const SizedBox.shrink(),
           _visited.contains(2) ? const ShoppingListPage() : const SizedBox.shrink(),
           _visited.contains(3) ? const StatisticsPage()   : const SizedBox.shrink(),
           _visited.contains(4) ? const ProfilePage()      : const SizedBox.shrink(),
@@ -88,31 +89,26 @@ class _HomePageState extends State<HomePage> {
         ),
         child: Row(
           children: [
-            _navItem(0, Icons.dashboard_outlined,    "Dashboard"),
-            _navItem(1, Icons.inventory_2_outlined,  "Inventory"),
-            _navItem(2, Icons.shopping_bag_outlined,  "List"),
-            _navItem(3, Icons.bar_chart_outlined,    "Statistics"),
-            _navItem(4, Icons.person_outline,        "Profile"),
+            _navItem(0, Icons.dashboard_outlined,   "Dashboard"),
+            _navItem(1, Icons.inventory_2_outlined, "Inventory"),
+            _navItem(2, Icons.shopping_bag_outlined, "List"),
+            _navItem(3, Icons.bar_chart_outlined,   "Statistics"),
+            _navItem(4, Icons.person_outline,       "Profile"),
           ],
         ),
       ),
     );
   }
 
-void _goTo(int index) {
-  setState(() {
-    _visited.add(index);
-    _currentIndex = index;
-
-    if (index == 0) {
-      _dashboardKey++;
-    }
-
-    if (index == 1) {
-      _inventoryKey++;
-    }
-  });
-}
+  void _goTo(int index) {
+    setState(() {
+      _visited.add(index);
+      _currentIndex = index;
+      if (index == 1) { 
+        _initialCategory = null; 
+      }
+    });
+  }
 
   Widget _navItem(int index, IconData icon, String label) {
     final active = _currentIndex == index;
@@ -125,10 +121,7 @@ void _goTo(int index) {
             AnimatedContainer(
               duration: const Duration(milliseconds: 250),
               height: 4, width: active ? 26 : 0,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(20),
-              ),
+              decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(20)),
             ),
             const SizedBox(height: 8),
             Icon(icon, color: active ? AppColors.primary : AppColors.textSecondary),

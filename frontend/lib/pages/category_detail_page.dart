@@ -154,7 +154,7 @@ appBar: AppBar(
       color: AppColors.textPrimary,
       size: 18,
     ),
-    onPressed: () => Navigator.pop(context, true),
+    onPressed: () => Navigator.pop(context, false),
   ),
   title: Text(
     widget.categoryName,

@@ -3,7 +3,6 @@ import '../constants/colors.dart';
 import '../services/statistics_service.dart';
 import '../widgets/budget_card.dart';
 import '../widgets/bar_chart_widget.dart';
-import '../services/receipt_history_service.dart  ';
 import '../data/app_data.dart';
 
 class StatisticsDetailPage extends StatefulWidget {
@@ -11,6 +10,7 @@ class StatisticsDetailPage extends StatefulWidget {
   final int year;
   final String monthName;
   final int recommendation;
+  
 
   const StatisticsDetailPage({
     super.key,
@@ -30,7 +30,8 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
   int _total = 0;
   Map<String, int> _perCategory = {};
 
-  List<Map<String, dynamic>> _purchaseHistory = [];
+  List<Map<String, dynamic>> _items = [];
+  String _sortBy = 'spending';
 
   @override
   void initState() {
@@ -44,7 +45,8 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
       month: widget.month,
     );
 
-    final history = await ReceiptHistoryService.getByMonth(
+    final items =
+    await StatisticsService.getItemHistory(
       year: widget.year,
       month: widget.month,
     );
@@ -74,7 +76,8 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
       _total = total;
       _perCategory = perCat;
       _isLoading = false;
-      _purchaseHistory = history;
+      _items = items;
+      _sortItems();
     });
   }
 
@@ -97,7 +100,41 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
           (match) => '${match[1]}.',
     );
   }
+  void _sortItems() {
+    switch (_sortBy) {
+      case 'qty':
+        _items.sort(
+          (a, b) => int.parse(
+            b['total_qty'].toString(),
+          ).compareTo(
+            int.parse(a['total_qty'].toString()),
+          ),
+        );
+        break;
 
+      case 'name':
+        _items.sort(
+          (a, b) => a['item_name']
+              .toString()
+              .compareTo(
+                b['item_name'].toString(),
+              ),
+        );
+        break;
+
+      default:
+        _items.sort(
+          (a, b) => double.parse(
+            b['total_spending'].toString(),
+          ).compareTo(
+            double.parse(
+              a['total_spending'].toString(),
+            ),
+          ),
+        );
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -175,7 +212,7 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
 
         const SizedBox(height: 22),
         const Text(
-          'Purchase History',
+          'Item History',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -183,8 +220,37 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
           ),
         ),
         const SizedBox(height: 10),
-
-        if (_purchaseHistory.isEmpty)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            DropdownButton<String>(
+              value: _sortBy,
+              underline: const SizedBox(),
+              items: const [
+                DropdownMenuItem(
+                  value: 'spending',
+                  child: Text('Highest Spending'),
+                ),
+                DropdownMenuItem(
+                  value: 'qty',
+                  child: Text('Highest Quantity'),
+                ),
+                DropdownMenuItem(
+                  value: 'name',
+                  child: Text('A-Z'),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _sortBy = value!;
+                  _sortItems();
+                });
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_items.isEmpty)
           const Text(
             'No purchase history available',
             style: TextStyle(
@@ -193,7 +259,41 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
             ),
           )
         else
-          ..._purchaseHistory.map((receipt) => _receiptCard(receipt)),
+          ..._items.map(
+          (item) => Card(
+            elevation: 0,
+            margin: const EdgeInsets.only(bottom: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor:
+                    AppColors.primary.withOpacity(0.12),
+                child: const Icon(
+                  Icons.inventory_2_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+              title: Text(
+                item['item_name'],
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                "Qty ${item['total_qty']} • Rp ${_rupiah(double.parse(item['unit_price'].toString()).toInt())}",
+              ),
+              trailing: Text(
+                "Rp ${_rupiah(double.parse(item['total_spending'].toString()).toInt())}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -280,185 +380,6 @@ class _StatisticsDetailPageState extends State<StatisticsDetailPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _receiptCard(Map<String, dynamic> receipt) {
-    final items = List<Map<String, dynamic>>.from(receipt['items'] ?? []);
-
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _showReceiptDetail(receipt),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.receipt_long_outlined,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      receipt['title'] ?? 'Receipt',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      receipt['date'] ?? '-',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      items.map((e) => e['name']).join(', '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    'Rp ${_rupiah(double.parse(receipt['total'].toString()).toInt())}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Icon(
-                    Icons.chevron_right,
-                    color: AppColors.textSecondary,
-                    size: 20,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  void _showReceiptDetail(Map<String, dynamic> receipt) {
-    final items = List<Map<String, dynamic>>.from(receipt['items'] ?? []);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                receipt['title'] ?? 'Receipt',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                receipt['date'] ?? '-',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              ...items.map((item) {
-                final qty = int.tryParse(item['quantity'].toString()) ?? 1;
-                final price = double.parse(item['price'].toString()).toInt();
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${item['name']} x$qty',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        'Rp ${_rupiah(price)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-
-              const Divider(height: 24),
-
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Total Spending',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'Rp ${_rupiah(double.parse(receipt['total'].toString()).toInt())}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
