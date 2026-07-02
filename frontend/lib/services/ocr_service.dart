@@ -316,7 +316,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
         );
       }
 
-      // 15.05.26-19:51 / 21.01.22-18:27
       final dmyDot = RegExp(
         r'\b(\d{1,2})[.](\d{1,2})[.](\d{2,4})[-\s]+(\d{1,2}:\d{2}(?::\d{2})?)',
       ).firstMatch(line);
@@ -346,7 +345,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
         }
       }
 
-      // 2023-08-02 08:46:36
       final ymd = RegExp(
         r'\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?',
       ).firstMatch(line);
@@ -512,7 +510,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       if (barcodeDetail != null) {
         if (pendingName != null) {
           final item = _buildItem(
-            name: pendingName!,
+            name: pendingName,
             quantity: barcodeDetail['quantity'] as int,
             unitPrice: barcodeDetail['unit_price'] as int,
             lineTotal: barcodeDetail['line_total'] as int,
@@ -529,7 +527,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
         final detail = _parsePlainQtyUnitTotalDetailLine(line);
         if (detail != null) {
           final item = _buildItem(
-            name: pendingName!,
+            name: pendingName,
             quantity: detail['quantity'] as int,
             unitPrice: detail['unit_price'] as int,
             lineTotal: detail['line_total'] as int,
@@ -544,7 +542,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
         final priceOnly = _parseMoneyFromLine(line);
         if (_isOnlyMoneyLine(line) && priceOnly != null && _isValidItemPrice(priceOnly)) {
           final item = _buildItem(
-            name: pendingName!,
+            name: pendingName,
             quantity: 1,
             unitPrice: priceOnly,
             lineTotal: priceOnly,
@@ -567,7 +565,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       if (parsedItem != null) {
         // Kalau sebelumnya ada nama produk terpotong, gabungkan.
         // Contoh Super Mart: EXCEL CAT... lalu CHICKEN&TUNA 500GR 26,000.
-        if (pendingName != null && pendingName!.isNotEmpty) {
+        if (pendingName != null && pendingName.isNotEmpty) {
           final mergedName = _toTitleCase(
             _normalizeProductNameSmart(_cleanName("$pendingName ${parsedItem['name']}")),
           );
