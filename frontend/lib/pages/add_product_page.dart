@@ -94,35 +94,82 @@ int _parseRupiah(String value) {
     }
   }
 
-  Future<void> _fillProductByBarcode(String barcode) async {
-    final productData = await ApiService.findProductByBarcode(barcode);
+Future<void> _fillProductByBarcode(String barcode) async {
+  final productData =
+      await ApiService.findProductByBarcode(barcode);
 
-    if (!mounted) return;
+  if (!mounted) return;
 
-    if (productData != null) {
-      setState(() {
-        _nameC.text = productData['name'] ?? '';
-        _priceC.text = productData['price'].toString().split('.').first;
-        _unit = productData['unit'] ?? 'pcs';
-      });
+  if (productData != null) {
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Produk ditemukan, data otomatis terisi')),
-      );
-    } else {
-      setState(() {
-        _nameC.clear();
-        _priceC.clear();
-        _unit = 'pcs';
-      });
+    setState(() {
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Barcode belum ditemukan, isi produk manual'),
-        ),
-      );
-    }
+      _nameC.text = productData['name'] ?? '';
+
+      _qtyC.text =
+          productData['quantity'].toString();
+
+      _priceC.text =
+          productData['price']
+              .toString()
+              .split('.')
+              .first;
+
+      _unit =
+          productData['unit'] ?? 'pcs';
+
+
+      if(productData['expired_date'] != null &&
+         productData['expired_date'] != '') {
+
+        _expiredDate =
+            DateTime.parse(
+              productData['expired_date']
+            );
+
+      }
+
+    });
+
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content:
+        Text('Produk ditemukan, data otomatis terisi'),
+      ),
+    );
+
+
+  } else {
+
+
+    setState(() {
+
+      // barcode tetap ada
+      _barcodeC.text = barcode;
+
+
+      // produk baru
+      _nameC.clear();
+      _qtyC.clear();
+      _priceC.clear();
+
+      _unit = 'pcs';
+
+      _expiredDate = null;
+
+    });
+
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content:
+        Text('Produk baru, silahkan isi data'),
+      ),
+    );
+
   }
+}
 
   void _scanBarcode() async {
     final result = await Navigator.push(
@@ -151,50 +198,46 @@ int _parseRupiah(String value) {
     return '$y-$m-$d';
   }
 
-  Future<void> _saveProduct() async {
-    if (!_formKey.currentState!.validate()) return;
+Future<void> _saveProduct() async {
+  if (!_formKey.currentState!.validate()) return;
 
-    if (_expiredDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pilih tanggal expired dulu'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
-      return;
-    }
+  setState(() => _isLoading = true);
 
-    setState(() => _isLoading = true);
-
-    final success = await ApiService.addItem(
-      {
-        'id_user': AppData().userId,
-        'name': _nameC.text.trim(),
-        'quantity': int.parse(_qtyC.text.trim()),
-        'stok': int.parse(_qtyC.text.trim()),
+  final success = await ApiService.addItem(
+    {
+      'id_user': AppData().userId,
+      'name': _nameC.text.trim(),
+      'quantity': int.parse(_qtyC.text.trim()),
+      'stok': int.parse(_qtyC.text.trim()),
       'price': _parseRupiah(_priceC.text.trim()),
-        'unit': _unit,
-        'barcode': _barcodeC.text.trim().isEmpty ? null : _barcodeC.text.trim(),
-        'expired_date': _formatDate(_expiredDate!),
-      },
-      categoryId: widget.categoryId,
-    );
+      'unit': _unit,
+      'barcode': _barcodeC.text.trim().isEmpty ? null : _barcodeC.text.trim(),
+      'expired_date': _expiredDate == null ? null : _formatDate(_expiredDate!),
+    },
+    categoryId: widget.categoryId,
+  );
 
-    setState(() => _isLoading = false);
+  setState(() => _isLoading = false);
 
-    if (!mounted) return;
+  if (!mounted) return;
 
-    if (success) {
-      Navigator.pop(context, true);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gagal menyimpan produk'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
-    }
-  }
+if (success) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Produk berhasil disimpan')),
+  );
+
+  _formKey.currentState!.reset();
+  _nameC.clear();
+  _qtyC.clear();
+  _barcodeC.clear();
+  _priceC.clear();
+  _qtyC.clear();
+  _unit = 'pcs';
+  _expiredDate = null;
+
+  setState(() {});
+}
+}
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +450,7 @@ _field(
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _label('Expired Date'),
+   _label('Expired Date (Optional)'),
         InkWell(
           onTap: _pickDate,
           borderRadius: BorderRadius.circular(14),
@@ -428,7 +471,7 @@ _field(
                 const SizedBox(width: 10),
                 Text(
                   _expiredDate == null
-                      ? 'Choose expired date'
+                     ? 'Skip if item has no expiry date'
                       : '${_expiredDate!.day}/${_expiredDate!.month}/${_expiredDate!.year}',
                   style: TextStyle(
                     color: _expiredDate == null

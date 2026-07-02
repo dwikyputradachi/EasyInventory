@@ -20,12 +20,14 @@ $nav_main = [
 $nav_manajemen = [
     ['href' => 'users.php', 'menu' => 'users', 'icon' => 'people-fill', 'label' => 'User Manage'],
     ['href' => 'kategori.php', 'menu' => 'kategori', 'icon' => 'tags-fill', 'label' => 'Category & OCR Keyword'],
-    ['href' => 'barang.php', 'menu' => 'barang', 'icon' => 'basket3-fill', 'label' => 'Product Data'],
+   ['href' => 'unmatched_alias.php', 'menu' => 'unmatched_alias', 'icon' => 'question-circle-fill', 'label' => 'Unmatched Product'],
+    ['href' => 'alias.php', 'menu' => 'alias', 'icon' => 'diagram-3-fill', 'label' => 'Product Alias'],
 ];
 
 $nav_monitoring = [
     ['href' => 'inventaris.php', 'menu' => 'inventaris', 'icon' => 'clipboard2-data-fill', 'label' => 'Monitor Inventaris'],
     ['href' => 'expired.php', 'menu' => 'expired', 'icon' => 'exclamation-triangle-fill', 'label' => 'Expired Items', 'badge' => true],
+['href' => 'spending.php', 'menu' => 'spending', 'icon' => 'receipt-cutoff', 'label' => 'Receipt Activity'],
 ];
 
 $expired_badge = 0;

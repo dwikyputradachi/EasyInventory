@@ -8,9 +8,14 @@ $active_menu = 'dashboard';
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-function qCount($db, $sql) {
+function qValue($db, $sql) {
     $r = $db->query($sql);
-    return $r ? (int)$r->fetch_assoc()['c'] : 0;
+    if (!$r) {
+        return 0;
+    }
+
+    $row = $r->fetch_assoc();
+    return $row ? ($row['c'] ?? 0) : 0;
 }
 
 function qRows($db, $sql) {
@@ -26,11 +31,58 @@ function qRows($db, $sql) {
     return $rows;
 }
 
+function rupiah($value) {
+    return 'Rp' . number_format((float)$value, 0, ',', '.');
+}
+
+// =====================================================
+// MAIN STATS
+// =====================================================
+
 $stats = [
-    'total_users'    => qCount($connect, "SELECT COUNT(*) c FROM users"),
-    'total_items'    => qCount($connect, "SELECT COUNT(*) c FROM item"),
-    'total_kategori' => qCount($connect, "SELECT COUNT(*) c FROM category"),
+    'total_users'    => (int) qValue($connect, "SELECT COUNT(*) c FROM users"),
+    'total_items'    => (int) qValue($connect, "SELECT COUNT(*) c FROM item"),
+    'total_kategori' => (int) qValue($connect, "SELECT COUNT(*) c FROM category"),
 ];
+
+// =====================================================
+// SPENDING STATS
+// Data dari receipt + receipt_item
+// =====================================================
+
+$stats['monthly_spending'] = qValue($connect, "
+    SELECT COALESCE(SUM(ri.price), 0) c
+    FROM receipt r
+    JOIN receipt_item ri ON r.id_receipt = ri.id_receipt
+    WHERE MONTH(r.created_at) = MONTH(CURDATE())
+    AND YEAR(r.created_at) = YEAR(CURDATE())
+");
+
+$stats['monthly_receipts'] = (int) qValue($connect, "
+    SELECT COUNT(*) c
+    FROM receipt
+    WHERE MONTH(created_at) = MONTH(CURDATE())
+    AND YEAR(created_at) = YEAR(CURDATE())
+");
+
+$recent_spending = qRows($connect, "
+    SELECT 
+        r.id_receipt,
+        r.name AS receipt_name,
+        r.created_at,
+        u.name AS user_name,
+        COALESCE(SUM(ri.price), 0) AS total
+    FROM receipt r
+    JOIN receipt_item ri ON r.id_receipt = ri.id_receipt
+    LEFT JOIN users u ON r.id_user = u.id_user
+    GROUP BY r.id_receipt, r.name, r.created_at, u.name
+    ORDER BY r.created_at DESC
+    LIMIT 6
+");
+
+// =====================================================
+// INVENTORY DATA
+// =====================================================
 
 $recent_items = qRows($connect, "
     SELECT 
@@ -50,7 +102,9 @@ $recent_items = qRows($connect, "
 ");
 
 $kategori_stok = qRows($connect, "
-    SELECT c.name_category, COUNT(i.id_item) AS total
+    SELECT 
+        c.name_category,
+        COUNT(i.id_item) AS total
     FROM category c
     LEFT JOIN item i ON c.id_category = i.id_category
     GROUP BY c.id_category, c.name_category
@@ -58,12 +112,9 @@ $kategori_stok = qRows($connect, "
     LIMIT 6
 ");
 
-$recent_users = qRows($connect, "
-    SELECT id_user, name, email, role
-    FROM users
-    ORDER BY id_user DESC
-    LIMIT 5
-");
+// =====================================================
+// CARDS
+// =====================================================
 
 $cards = [
     [
@@ -90,21 +141,44 @@ $cards = [
         'bg'    => '#ede9fe',
         'icon'  => 'tags-fill',
     ],
+    [
+        'label' => 'Monthly Spending',
+        'sub'   => 'all users this month',
+        'val'   => rupiah($stats['monthly_spending']),
+        'color' => '#f59e0b',
+        'bg'    => '#fef3c7',
+        'icon'  => 'cash-coin',
+    ],
+    [
+        'label' => 'Monthly Receipts',
+        'sub'   => 'purchase records',
+        'val'   => $stats['monthly_receipts'],
+        'color' => '#0ea5e9',
+        'bg'    => '#e0f2fe',
+        'icon'  => 'receipt-cutoff',
+    ],
 ];
 
 ob_start();
 ?>
 
+<!-- MAIN CARDS -->
 <div class="row g-3 mb-4">
     <?php foreach ($cards as $c): ?>
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-6 col-lg-4">
             <div class="stat-card">
                 <div>
-                    <div class="stat-label"><?= htmlspecialchars($c['label']) ?></div>
+                    <div class="stat-label">
+                        <?= htmlspecialchars($c['label']) ?>
+                    </div>
+
                     <div class="stat-value" style="color:<?= $c['color'] ?>;">
                         <?= $c['val'] ?>
                     </div>
-                    <div class="stat-sub"><?= htmlspecialchars($c['sub']) ?></div>
+
+                    <div class="stat-sub">
+                        <?= htmlspecialchars($c['sub']) ?>
+                    </div>
                 </div>
 
                 <div class="stat-icon" style="background:<?= $c['bg'] ?>;color:<?= $c['color'] ?>;">
@@ -115,6 +189,72 @@ ob_start();
     <?php endforeach; ?>
 </div>
 
+<!-- RECENT SPENDING -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="table-wrap">
+            <div class="card-header-custom">
+                <span class="ch-title">
+                    <i class="bi bi-receipt-cutoff me-2 text-primary"></i>
+                    Recent Spending
+                </span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Receipt</th>
+                            <th>User</th>
+                            <th>Date</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        <?php if (empty($recent_spending)): ?>
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">
+                                    No recent spending data
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($recent_spending as $sp): ?>
+                                <tr>
+                                    <td>
+                                        <strong>
+                                            <?= htmlspecialchars($sp['receipt_name'] ?? 'Receipt') ?>
+                                        </strong>
+                                    </td>
+
+                                    <td>
+                                        <?= htmlspecialchars($sp['user_name'] ?? '-') ?>
+                                    </td>
+
+                                    <td>
+                                        <?php if (!empty($sp['created_at'])): ?>
+                                            <?= date('d M Y H:i', strtotime($sp['created_at'])) ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
+
+                                    <td class="text-end">
+                                        <strong>
+                                            <?= rupiah($sp['total'] ?? 0) ?>
+                                        </strong>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- INVENTORY SUMMARY -->
 <div class="row g-3">
     <div class="col-lg-8">
         <div class="table-wrap">
@@ -123,7 +263,10 @@ ob_start();
                     <i class="bi bi-clock-history me-2 text-primary"></i>
                     Recent Items
                 </span>
-                <a href="barang.php" class="btn btn-sm btn-outline-secondary">View All</a>
+
+                <a href="inventaris.php" class="btn btn-sm btn-outline-secondary">
+                    View All
+                </a>
             </div>
 
             <div class="table-responsive">
@@ -155,7 +298,9 @@ ob_start();
 
                                 <tr>
                                     <td>
-                                        <strong><?= htmlspecialchars($item['name'] ?? '-') ?></strong>
+                                        <strong>
+                                            <?= htmlspecialchars($item['name'] ?? '-') ?>
+                                        </strong>
                                     </td>
 
                                     <td>
@@ -189,7 +334,7 @@ ob_start();
     </div>
 
     <div class="col-lg-4">
-        <div class="table-wrap mb-3">
+        <div class="table-wrap">
             <div class="card-header-custom">
                 <span class="ch-title">
                     <i class="bi bi-bar-chart-fill me-2" style="color:#8b5cf6;"></i>
@@ -210,94 +355,26 @@ ob_start();
                     </p>
                 <?php else: ?>
                     <?php foreach ($kategori_stok as $i => $ks): ?>
-                        <?php $pct = $max > 0 ? round($ks['total'] / $max * 100) : 0; ?>
+                        <?php
+                            $pct = $max > 0 ? round($ks['total'] / $max * 100) : 0;
+                            $pctSafe = max(0, min(100, (int)$pct));
+                            $barColor = $colors[$i % count($colors)];
+                        ?>
 
                         <div style="margin-bottom:14px;">
                             <div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;margin-bottom:5px;">
-                                <span><?= htmlspecialchars($ks['name_category'] ?? '-') ?></span>
+                                <span>
+                                    <?= htmlspecialchars($ks['name_category'] ?? '-') ?>
+                                </span>
+
                                 <span style="color:var(--muted);">
                                     <?= (int)$ks['total'] ?> items
                                 </span>
                             </div>
 
                             <div style="background:#f1f5f9;border-radius:8px;height:8px;overflow:hidden;">
-                                <?php 
-$barColor = $colors[$i % count($colors)];
-$pctSafe = max(0, min(100, (int)$pct));
-?>
-
-<div style="width:<?= $pctSafe ?>%; height:100%; background:<?= $barColor ?>; border-radius:8px;"></div>
+                                <div style="width:<?= $pctSafe ?>%; height:100%; background:<?= $barColor ?>; border-radius:8px;"></div>
                             </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="table-wrap">
-            <div class="card-header-custom">
-                <span class="ch-title">
-                    <i class="bi bi-person-lines-fill me-2 text-primary"></i>
-                    Recent Users
-                </span>
-                <a href="users.php" class="btn btn-sm btn-outline-secondary">All</a>
-            </div>
-
-            <div style="padding:8px 0;">
-                <?php if (empty($recent_users)): ?>
-                    <p class="text-center text-muted py-3" style="font-size:13px;">
-                        No users yet
-                    </p>
-                <?php else: ?>
-                    <?php foreach ($recent_users as $u): ?>
-                        <div style="
-                            display:flex;
-                            align-items:center;
-                            gap:10px;
-                            padding:10px 16px;
-                            border-bottom:1px solid #f1f5f9;
-                        ">
-                            <div style="
-                                width:34px;
-                                height:34px;
-                                background:var(--primary-light);
-                                border-radius:50%;
-                                display:flex;
-                                align-items:center;
-                                justify-content:center;
-                                font-weight:700;
-                                font-size:13px;
-                                color:var(--primary);
-                                flex-shrink:0;
-                            ">
-                                <?= strtoupper(substr($u['name'] ?? 'U', 0, 1)) ?>
-                            </div>
-
-                            <div style="flex:1;min-width:0;">
-                                <div style="
-                                    font-size:13px;
-                                    font-weight:600;
-                                    white-space:nowrap;
-                                    overflow:hidden;
-                                    text-overflow:ellipsis;
-                                ">
-                                    <?= htmlspecialchars($u['name'] ?? '-') ?>
-                                </div>
-
-                                <div style="
-                                    font-size:11.5px;
-                                    color:var(--muted);
-                                    white-space:nowrap;
-                                    overflow:hidden;
-                                    text-overflow:ellipsis;
-                                ">
-                                    <?= htmlspecialchars($u['email'] ?? '-') ?>
-                                </div>
-                            </div>
-
-                            <span class="badge bg-light text-dark border">
-                                <?= htmlspecialchars($u['role'] ?? 'user') ?>
-                            </span>
                         </div>
                     <?php endforeach; ?>
                 <?php endif; ?>

@@ -74,69 +74,59 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
     }
   }
 
-  Future<void> _showDeleteDialog(Product product) async {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete Product'),
-        content: const Text('Stock is 0. Do you want to delete this product?'),
 
-      ),
+
+Future<void> _increaseQty(Product p) async {
+  setState(() {
+    _isLoading = true;
+  });
+
+ final success = await ApiService.updateItemStock(
+  p.id,
+  1,
+  unitPrice: p.price,
+);
+
+  if (success) {
+    await _loadProducts();
+  } else {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to update stock')),
     );
   }
-
-  Future<void> _increaseQty(Product p) async {
-    final newQty = p.quantity + 1;
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    final success = await ApiService.updateItemStock(p.id, newQty);
-
-    if (success) {
-      await _loadProducts();
-    } else {
-      if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update stock')),
-      );
-    }
-  }
+}
 
   Future<void> _decreaseQty(Product p) async {
-    if (p.quantity <= 1) {
-      _showDeleteDialog(p);
-      return;
-    }
+  if (p.quantity <= 0) {
+    return;
+  }
 
-    final newQty = p.quantity - 1;
+  setState(() {
+    _isLoading = true;
+  });
+
+  final success = await ApiService.updateItemStock(p.id, -1);
+
+  if (success) {
+    await _loadProducts();
+  } else {
+    if (!mounted) return;
 
     setState(() {
-      _isLoading = true;
+      _isLoading = false;
     });
 
-    final success = await ApiService.updateItemStock(p.id, newQty);
-
-    if (success) {
-      await _loadProducts();
-    } else {
-      if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update stock')),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to update stock')),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
