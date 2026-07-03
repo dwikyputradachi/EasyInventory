@@ -4,65 +4,19 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth_middleware.php';
 
 $user = authenticate();
-$id_user = (int)$user['id_user'];
 
-$id_category = $_GET['id_category'] ?? null;
-
-if (!$id_category) {
-    error('id_category wajib diisi', 400);
-}
-
-$db = getDB();
-
-function getExpiredStatus($expired_date) {
-    if ($expired_date == null || $expired_date == '') {
-        return 'no_expiry';
-    }
-
-    $today = new DateTime(date("Y-m-d"));
-    $expiredDate = new DateTime($expired_date);
-
-    $daysLeft = (int)$today->diff($expiredDate)->format("%r%a");
-
-    if ($daysLeft <= 0) {
-        return 'expired';
-    }
-
-    if ($daysLeft <= 7) {
-        return 'near_expired';
-    }
-
-    return 'safe';
-}
-
-$sql = "SELECT 
-            id_item,
-            id_category,
-            id_user,
-            name,
-            quantity,
-            stok,
-            price,
-            unit,
-            barcode,
-            expired_date
-        FROM item 
-        WHERE id_category = ? 
-        AND id_user = ? 
-        ORDER BY id_item DESC";
-
-$stmt = $db->prepare($sql);
-$stmt->bind_param("ii", $id_category, $id_user);
+$db   = getDB();
+$stmt = $db->prepare('
+    SELECT i.id_item, i.name, i.quantity, i.stok, i.price, i.unit, i.barcode, i.expired_date,
+           c.name_category
+    FROM item i
+    JOIN category c ON i.id_category = c.id_category
+    WHERE i.id_user = ?
+    ORDER BY i.expired_date ASC
+');
+$stmt->bind_param('i', $user['id_user']);
 $stmt->execute();
-
-$result = $stmt->get_result();
-$data = [];
-
-while ($row = $result->fetch_assoc()) {
-    $row['expired_status'] = getExpiredStatus($row['expired_date']);
-    $data[] = $row;
-}
-
+$data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $db->close();
 
-success($data, "Items loaded");
+success($data);

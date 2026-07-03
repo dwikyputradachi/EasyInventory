@@ -563,17 +563,14 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
 
       final parsedItem = _parseMinimarketItemLine(line);
       if (parsedItem != null) {
-        // Kalau sebelumnya ada nama produk terpotong, gabungkan.
-        // Contoh Super Mart: EXCEL CAT... lalu CHICKEN&TUNA 500GR 26,000.
+
         if (pendingName != null && pendingName.isNotEmpty) {
           final mergedName = _toTitleCase(
             _normalizeProductNameSmart(_cleanName("$pendingName ${parsedItem['name']}")),
           );
           parsedItem['name'] = mergedName;
-          parsedItem['category'] = _guessCategory(mergedName);
         }
 
-        // Kalau line berikutnya cuma angka yang sama dengan total, lewati.
         if (i + 1 < itemEnd && _isOnlyMoneyLine(lines[i + 1])) {
           final nextPrice = _parseMoneyFromLine(lines[i + 1]);
           if (nextPrice != null && (nextPrice - (parsedItem['line_total'] as int)).abs() <= 50) {
@@ -581,7 +578,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
           }
         }
 
-        // Kalau line berikutnya barcode/PCS detail yang cocok, pakai barcode dari sana.
         if (i + 1 < itemEnd) {
           final nextDetail = _parseBarcodeDetailLine(lines[i + 1]);
           if (nextDetail != null) {
@@ -855,7 +851,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       'price': unitPrice,
       'quantity': quantity,
       'line_total': lineTotal,
-      'category': _guessCategory(cleanName),
       if (code != null && code.trim().isNotEmpty) 'code': code,
     };
   }
@@ -1376,68 +1371,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     return _normalizeKeyword(text).replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
-  static String _guessCategory(String name) {
-    final lower = _normalizeKeyword(name);
-
-    if (_containsAny(lower, [
-      'golda',
-      'coffee',
-      'cof ',
-      'aqua',
-      'mineral',
-      'nestle pure',
-      'le minerale',
-      'ultra',
-      'fruit tea',
-      'teh',
-      'susu',
-    ])) {
-      return 'Beverages';
-    }
-
-    if (_containsAny(lower, [
-      'tisu',
-      'tissue',
-      'shp',
-      'shampoo',
-      'makarizo',
-      'sabun',
-      'pasta gigi',
-    ])) {
-      return 'Toiletries';
-    }
-
-    if (_containsAny(lower, [
-      'indomie',
-      'mie',
-      'pop mie',
-      'kecap',
-      'nutrijel',
-      'beng-beng',
-      'kanzler',
-      'sosis',
-      'bakso',
-      'roti',
-      'bread',
-      'snack',
-    ])) {
-      return 'Pantry';
-    }
-
-    if (_containsAny(lower, ['kantong plastik', 'plastik', 'bag'])) {
-      return 'Households Items';
-    }
-
-    if (_containsAny(lower, ['cat ', 'kitten', 'chicken&tuna'])) {
-      return 'Others';
-    }
-
-    return 'Others';
-  }
-
-  // =========================================================
-  // COMMON HELPERS
-  // =========================================================
 
   static bool _containsAny(String text, List<String> keywords) {
     for (final keyword in keywords) {

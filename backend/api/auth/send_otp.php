@@ -2,7 +2,8 @@
 
 require_once "../config/cors.php";
 require_once "../config/database.php";
-require "../../vendor/autoload.php";
+require_once "../config/auth_middleware.php";
+require_once __DIR__ . "/../vendor/autoload.php";
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -25,7 +26,7 @@ if (
 $email   = trim($data["email"]);
 $purpose = trim($data["purpose"]);
 
-if (!in_array($purpose, ["register", "forgot_password"])) {
+if (!in_array($purpose, ["register", "forgot_password", "change_email"])) {
     echo json_encode([
         "success" => false,
         "message" => "Purpose tidak valid"
@@ -63,15 +64,35 @@ if ($purpose == "forgot_password") {
     }
 }
 
+if ($purpose == "change_email") {
+
+    $authUser = authenticate();
+
+    $stmt = $conn->prepare("
+        SELECT id_user
+        FROM users
+        WHERE email = ?
+    ");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows > 0) {
+        echo json_encode([
+            "success" => false,
+            "message" => "Email sudah digunakan akun lain"
+        ]);
+        exit;
+    }
+}
+
 $otp     = rand(100000, 999999);
 $expired = date("Y-m-d H:i:s", strtotime("+5 minutes"));
 
-// --- Transaction: hapus OTP lama + insert OTP baru + kirim email harus all-or-nothing ---
 $conn->begin_transaction();
 
 try {
 
-    // hapus OTP lama dengan purpose yang sama
     $delete = $conn->prepare("
         DELETE FROM password_resets
         WHERE email = ?
@@ -111,6 +132,14 @@ try {
             <h1>$otp</h1>
             <p>Berlaku selama 5 menit.</p>
         ";
+    } elseif ($purpose == "change_email") {
+        $mail->Subject = "Verifikasi Email Baru";
+        $mail->Body = "
+            <h2>Easy Inventory</h2>
+            <p>Kode verifikasi untuk email baru akun kamu:</p>
+            <h1>$otp</h1>
+            <p>Berlaku selama 5 menit.</p>
+        ";
     } else {
         $mail->Subject = "Reset Password";
         $mail->Body = "
@@ -120,9 +149,6 @@ try {
             <p>Berlaku selama 5 menit.</p>
         ";
     }
-
-    // Kalau send() gagal, exception dilempar (karena new PHPMailer(true))
-    // sehingga transaction di-rollback di bawah -> tidak ada OTP nyangkut di DB.
     $mail->send();
 
     $conn->commit();

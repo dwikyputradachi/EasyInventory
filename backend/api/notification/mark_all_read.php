@@ -3,7 +3,7 @@
 include_once '../config/response.php';
 include_once '../config/database.php';
 
-/** @var mysqli $conn */
+$conn = getDB();
 
 $sql = "UPDATE notification SET is_read = 1 WHERE is_read = 0";
 

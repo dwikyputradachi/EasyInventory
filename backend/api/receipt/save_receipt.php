@@ -23,46 +23,146 @@ try {
     $id_receipt = $db->insert_id;
 
     foreach ($items as $it) {
-        $name   = trim($it['name']         ?? '');
-        $price  = (float)($it['price']     ?? 0);
-        $qty    = (int)($it['quantity']    ?? 1);
-        $id_cat = (int)($it['id_category'] ?? 0);
 
-        if (!$name) continue;
+    $name   = trim($it['name'] ?? '');
+    $price  = (float)($it['price'] ?? 0);
+    $qty    = (int)($it['quantity'] ?? 1);
+    $id_cat = (int)($it['id_category'] ?? 0);
 
-        // 2. Simpan ke receipt_item
-        $s = $db->prepare('INSERT INTO receipt_item (id_receipt, id_category, name, quantity, price) VALUES (?, ?, ?, ?, ?)');
-        $s->bind_param('iisid', $id_receipt, $id_cat, $name, $qty, $price);
-        $s->execute();
+    if (!$name) continue;
 
-        // 3. Cek item di inventory
-        $like = '%' . $name . '%';
-        $s = $db->prepare('SELECT id_item, stok FROM item WHERE id_user = ? AND name LIKE ?');
-        $s->bind_param('is', $user['id_user'], $like);
-        $s->execute();
-        $existing = $s->get_result()->fetch_assoc();
+    // ==========================================
+    // CEK ITEM YANG SUDAH ADA
+    // ==========================================
 
-        if ($existing) {
-            $newStok = $existing['stok'] + $qty;
-            $s = $db->prepare('UPDATE item SET stok = ? WHERE id_item = ?');
-            $s->bind_param('ii', $newStok, $existing['id_item']);
-            $s->execute();
-        } else {
-            $s = $db->prepare('INSERT INTO item (id_user, id_category, name, quantity, stok, price) VALUES (?, ?, ?, ?, ?, ?)');
-            $s->bind_param('iisiid', $user['id_user'], $id_cat, $name, $qty, $qty, $price);
-            $s->execute();
-        }
+    $s = $db->prepare("
+        SELECT
+            id_item,
+            stok,
+            id_category
+        FROM item
+        WHERE id_user = ?
+        AND LOWER(TRIM(name)) = LOWER(TRIM(?))
+        LIMIT 1
+    ");
 
-        // 4. Cocokkan dengan shopping list
-        $s = $db->prepare('
-            UPDATE shopping_list_items sli
-            JOIN shopping_lists sl ON sli.id_shopping_list = sl.id_shopping_list
-            SET sli.is_bought = 1, sli.matched_item_name = ?
-            WHERE sl.id_user = ? AND sli.is_bought = 0 AND sli.name_item LIKE ?
-        ');
-        $s->bind_param('sis', $name, $user['id_user'], $like);
-        $s->execute();
+    $s->bind_param(
+        'is',
+        $user['id_user'],
+        $name
+    );
+
+    $s->execute();
+
+    $existing = $s->get_result()->fetch_assoc();
+
+    if ($existing) {
+
+        $newStok = (int)$existing['stok'] + $qty;
+
+        $update = $db->prepare("
+            UPDATE item
+            SET stok = ?
+            WHERE id_item = ?
+        ");
+
+        $update->bind_param(
+            'ii',
+            $newStok,
+            $existing['id_item']
+        );
+
+        $update->execute();
+
+        $id_item = $existing['id_item'];
+
+        $id_cat = (int)$existing['id_category'];
+
     }
+
+
+    else {
+
+        $insert = $db->prepare("
+            INSERT INTO item
+            (
+                id_user,
+                id_category,
+                name,
+                quantity,
+                stok,
+                price
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?)
+        ");
+
+        $insert->bind_param(
+            'iisiid',
+            $user['id_user'],
+            $id_cat,
+            $name,
+            $qty,
+            $qty,
+            $price
+        );
+
+        $insert->execute();
+
+        $id_item = $db->insert_id;
+    }
+
+
+    $receiptItem = $db->prepare("
+        INSERT INTO receipt_item
+        (
+            id_receipt,
+            id_item,
+            id_category,
+            name,
+            quantity,
+            price
+        )
+        VALUES
+        (?, ?, ?, ?, ?, ?)
+    ");
+
+    $receiptItem->bind_param(
+        'iiisid',
+        $id_receipt,
+        $id_item,
+        $id_cat,
+        $name,
+        $qty,
+        $price
+    );
+
+    $receiptItem->execute();
+
+    $like = '%' . $name . '%';
+
+    $match = $db->prepare('
+        UPDATE shopping_list_items sli
+        JOIN shopping_lists sl
+        ON sli.id_shopping_list = sl.id_shopping_list
+        SET
+            sli.is_bought = 1,
+            sli.matched_item_name = ?
+        WHERE
+            sl.id_user = ?
+            AND sli.is_bought = 0
+            AND sli.name_item LIKE ?
+    ');
+
+    $match->bind_param(
+        'sis',
+        $name,
+        $user['id_user'],
+        $like
+    );
+
+    $match->execute();
+}
 
     $db->commit();
     $db->close();

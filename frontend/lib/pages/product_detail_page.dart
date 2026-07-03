@@ -60,7 +60,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
   void _editProduct() {
     final nameC = TextEditingController(text: product.name);
-    final qtyC = TextEditingController(text: product.quantity.toString());
+    final qtyC = TextEditingController(text: product.stock.toString());
     final priceC = TextEditingController(text: product.price.toString());
     final barcodeC = TextEditingController(text: product.barcode ?? '');
 
@@ -186,7 +186,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         {
                           'name': nameC.text.trim(),
                           'quantity':
-                              int.tryParse(qtyC.text) ?? product.quantity,
+                              int.tryParse(qtyC.text) ?? product.stock,
                           'price': int.tryParse(priceC.text) ?? product.price,
                           'unit': unit,
                           'barcode': barcodeC.text.trim(),
@@ -285,7 +285,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   ),
                 ),
                 const Divider(height: 30),
-                _rowInfo("Stock", "${product.quantity} ${product.unit}"),
+                _rowInfo("Stock", "${product.stock} ${product.unit}"),
                 _rowInfo("Price", "Rp ${product.price}"),
                 _rowInfo("Expired", expiredDate),
                 if (product.barcode != null && product.barcode!.isNotEmpty)

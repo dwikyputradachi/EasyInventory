@@ -1,4 +1,13 @@
 <?php
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 require_once __DIR__ . '/../config/response.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth_middleware.php';
@@ -30,10 +39,7 @@ if ($expired_date === '') {
 
 // =====================================================
 // AUTO CATEGORY
-// Tetap pakai ocr_keywords untuk kategori
-// Bukan product_alias
 // =====================================================
-
 if (!$id_category && !empty($name)) {
     $input = strtolower(trim($name));
     $id_category = null;
@@ -67,7 +73,6 @@ if (!$id_category && !empty($name)) {
         }
     }
 
-    // fallback ke Others kalau tidak ada keyword yang cocok
     if (!$id_category) {
         $others = $conn->prepare("
             SELECT id_category 
@@ -95,7 +100,6 @@ if (!$id_category && !empty($name)) {
 // =====================================================
 // VALIDATION
 // =====================================================
-
 if (!$id_category || !$id_user || !$name || $quantity === null || !$unit) {
     echo json_encode([
         "success" => false,
@@ -136,7 +140,6 @@ if ($price <= 0) {
 // =====================================================
 // INSERT ITEM
 // =====================================================
-
 $sql = "
     INSERT INTO item 
     (id_category, id_user, name, quantity, stok, price, unit, barcode, expired_date)
@@ -180,11 +183,7 @@ $id_item = $conn->insert_id;
 
 // =====================================================
 // INSERT RECEIPT + RECEIPT_ITEM
-// Untuk statistik user
-// receipt_item.price = total harga
-// total = quantity * unit price
 // =====================================================
-
 $receiptResult = createReceiptItem(
     $conn,
     $id_user,
@@ -208,7 +207,6 @@ if (!$receiptResult['success']) {
 // =====================================================
 // GET NEW ITEM
 // =====================================================
-
 $get = $conn->prepare("
     SELECT * 
     FROM item 
@@ -241,23 +239,12 @@ if (!$item) {
 // =====================================================
 // NOTIFICATION
 // =====================================================
-
 syncItemNotifications($conn, $item);
 
 // =====================================================
 // SHOPPING LIST MATCH
-// Contoh:
-// shopping list item = susu
-// product masuk = Dancow
-// product_alias: dancow -> susu
-// maka shopping_list_items.is_bought = 1
 // =====================================================
-
 $shoppingMatch = markShoppingListIfMatched($conn, $id_user, $name);
-
-// =====================================================
-// RESPONSEkdada aa
-// ===================================================
 
 http_response_code(201);
 echo json_encode([

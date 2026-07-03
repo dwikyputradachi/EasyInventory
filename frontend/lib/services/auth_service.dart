@@ -1,5 +1,8 @@
 import 'api_service.dart';
 import '../data/app_data.dart';
+import 'api_service.dart';
+import '../data/app_data.dart';
+import 'session_service.dart';
 
 class AuthService {
   static Future<Map<String, dynamic>> register({
@@ -17,7 +20,7 @@ class AuthService {
     return res;
   }
 
-  static Future<Map<String, dynamic>> login({
+static Future<Map<String, dynamic>> login({
     required String email,
     required String password,
   }) async {
@@ -35,6 +38,8 @@ class AuthService {
         name: data['name'] ?? '',
         email: data['email'] ?? '',
       );
+
+      await SessionService.saveSession();
     }
 
     return res;
@@ -79,8 +84,9 @@ static Future<Map<String, dynamic>> resetPassword({
     },
   );
 }
-
-  static void logout() {
+  
+  static Future<void> logout() async {
+    await SessionService.clearSession();
     AppData().clearSession();
   }
 }

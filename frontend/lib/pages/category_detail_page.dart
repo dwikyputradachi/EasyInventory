@@ -103,7 +103,7 @@ Future<void> _increaseQty(Product p) async {
 }
 
   Future<void> _decreaseQty(Product p) async {
-  if (p.quantity <= 0) {
+  if (p.stock <= 0) {
     return;
   }
 
@@ -211,7 +211,7 @@ appBar: AppBar(
                                         ),
                                         const SizedBox(width: 10),
                                         Text(
-                                          '${p.quantity}',
+                                          '${p.stock}',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w700,
                                           ),

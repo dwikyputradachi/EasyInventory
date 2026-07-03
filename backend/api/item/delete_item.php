@@ -3,7 +3,7 @@
 include_once '../config/response.php';
 include_once '../config/database.php';
 
-/** @var mysqli $conn */
+$conn = getDB();
 
 $id_item = $_GET['id_item'] ?? null;
 
@@ -28,7 +28,6 @@ if ($checkItem->get_result()->num_rows === 0) {
     exit;
 }
 
-// Hapus notifikasi yang berkaitan dengan item ini
 $deleteNotif = $conn->prepare("DELETE FROM notification WHERE id_item = ?");
 $deleteNotif->bind_param("i", $id_item);
 $deleteNotif->execute();

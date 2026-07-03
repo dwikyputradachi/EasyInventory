@@ -5,7 +5,7 @@ import '../services/auth_service.dart';
 import '../services/profile_service.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-
+import '../services/api_service.dart';
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -17,7 +17,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final nameC = TextEditingController();
   final emailC = TextEditingController();
   File? profileImage;
-  final ImagePicker _picker = ImagePicker();
+  final _picker = ImagePicker();
 
   String name = '';
   String email = '';
@@ -48,56 +48,48 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
+  // ---------- Data ----------
+
   Future<void> _loadProfile() async {
     final res = await ProfileService.getProfile();
-
     if (res['status'] == 'success') {
       final data = res['data'];
-
       setState(() {
         name = data['name'] ?? '';
         email = data['email'] ?? '';
         nameC.text = name;
         emailC.text = email;
-
         AppData().setProfilePhoto(data['profile_photo'] ?? '');
-
         isLoading = false;
       });
     } else {
       setState(() => isLoading = false);
-      _showSnack(res['message'] ?? 'Failed to load profile', AppColors.danger);
+      _snack(res['message'] ?? 'Failed to load profile', AppColors.danger);
     }
   }
 
   Future<void> _saveProfile() async {
-    final newName = nameC.text.trim();
-    final newEmail = emailC.text.trim();
-
-    if (newName.isEmpty || newEmail.isEmpty) {
-      _showSnack('Name and email cannot be empty', AppColors.warning);
-      return;
+    if (nameC.text.trim().isEmpty) {
+      return _snack('Name is required', AppColors.warning);
     }
 
     setState(() => isSaving = true);
-
+    
     final res = await ProfileService.updateProfile(
-      name: newName,
-      email: newEmail,
+      name: nameC.text.trim(),
+      email: email, 
     );
 
     setState(() => isSaving = false);
 
     if (res['status'] == 'success') {
       setState(() {
-        name = newName;
-        email = newEmail;
+        name = nameC.text.trim();
         isEditing = false;
       });
-
-      _showSnack('Profile updated', AppColors.primary);
+      _snack('Profile updated successfully', AppColors.primary);
     } else {
-      _showSnack(res['message'] ?? 'Failed to update profile', AppColors.danger);
+      _snack(res['message'] ?? 'Failed to update profile', AppColors.danger);
     }
   }
 
@@ -106,93 +98,231 @@ class _ProfilePageState extends State<ProfilePage> {
     Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
   }
 
-  void _showSnack(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
-    );
+  void _snack(String message, Color color) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
-  Future<void> _pickProfileImage(ImageSource source) async {
-    final picked = await _picker.pickImage(
-      source: source,
-      imageQuality: 70,
-    );
+  // ---------- Photo (upload still local only, not yet persisted to DB record read-back) ----------
 
+  Future<void> _pickProfileImage(ImageSource source) async {
+    final picked = await _picker.pickImage(source: source, imageQuality: 70);
     if (picked == null) return;
 
-    setState(() {
-      profileImage = File(picked.path);
-    });
-
+    setState(() => profileImage = File(picked.path));
     AppData().profileImagePath = picked.path;
 
     final res = await ProfileService.uploadPhoto(picked.path);
-
-    if (res['status'] == 'success') {
-      _showSnack('Profile photo uploaded', AppColors.primary);
-    } else {
-      _showSnack(res['message'] ?? 'Failed to upload photo', AppColors.danger);
-    }
+    _snack(
+      res['status'] == 'success'
+          ? 'Profile photo uploaded'
+          : (res['message'] ?? 'Failed to upload photo'),
+      res['status'] == 'success' ? AppColors.primary : AppColors.danger,
+    );
   }
+
   void _changePhoto() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Wrap(
-          runSpacing: 12,
-          children: [
-            const Text(
-              'Change Photo',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            ),
-            _sheetItem(
-              Icons.camera_alt_outlined,
-              'Take Photo',
+    _showSheet(
+      Wrap(
+        runSpacing: 12,
+        children: [
+          const Text('Change Photo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          _sheetItem(Icons.camera_alt_outlined, 'Take Photo',
               onTap: () {
                 Navigator.pop(context);
                 _pickProfileImage(ImageSource.camera);
-              },
-            ),
-            _sheetItem(
-              Icons.photo_library_outlined,
-              'Choose from Gallery',
+              }),
+          _sheetItem(Icons.photo_library_outlined, 'Choose from Gallery',
               onTap: () {
                 Navigator.pop(context);
                 _pickProfileImage(ImageSource.gallery);
-              },
-            ),
-            _sheetItem(
-              Icons.delete_outline,
-              'Remove Photo',
-              danger: true,
+              }),
+          _sheetItem(Icons.delete_outline, 'Remove Photo', danger: true,
               onTap: () {
                 Navigator.pop(context);
                 setState(() => profileImage = null);
                 AppData().profileImagePath = '';
-                _showSnack('Profile photo removed', AppColors.danger);
-              },
-            ),
-          ],
-        ),
+                _snack('Profile photo removed', AppColors.danger);
+              }),
+        ],
       ),
+      padding: const EdgeInsets.all(20),
     );
   }
+
+  // ---------- Change Password ----------
 
   void _changePassword() {
     final currentC = TextEditingController();
     final newC = TextEditingController();
     final confirmC = TextEditingController();
+    bool showCurrent = false, showNew = false, showConfirm = false, saving = false;
 
-    bool showCurrent = false;
-    bool showNew = false;
-    bool showConfirm = false;
-    bool savingPassword = false;
+    _showSheet(
+      StatefulBuilder(builder: (context, setSheetState) {
+        Future<void> save() async {
+          if (currentC.text.isEmpty || newC.text.isEmpty || confirmC.text.isEmpty) {
+            return _snack('All password fields are required', AppColors.warning);
+          }
+          if (newC.text.length < 8) {
+            return _snack('Password must be at least 8 characters', AppColors.warning);
+          }
+          if (newC.text != confirmC.text) {
+            return _snack('Password does not match', AppColors.danger);
+          }
 
+          setSheetState(() => saving = true);
+          final res = await ProfileService.changePassword(
+            oldPassword: currentC.text,
+            newPassword: newC.text,
+          );
+          setSheetState(() => saving = false);
+
+          if (res['status'] == 'success') {
+            Navigator.pop(context);
+            _snack('Password updated', AppColors.primary);
+          } else {
+            _snack(res['message'] ?? 'Failed to update password', AppColors.danger);
+          }
+        }
+
+        return _sheetScaffold(
+          title: 'Change Password',
+          subtitle: 'Use a strong password to keep your account secure.',
+          children: [
+            _passwordField(currentC, 'Current Password', showCurrent,
+                () => setSheetState(() => showCurrent = !showCurrent)),
+            const SizedBox(height: 12),
+            _passwordField(newC, 'New Password', showNew,
+                () => setSheetState(() => showNew = !showNew)),
+            const SizedBox(height: 12),
+            _passwordField(confirmC, 'Confirm Password', showConfirm,
+                () => setSheetState(() => showConfirm = !showConfirm)),
+            const SizedBox(height: 14),
+            _infoBanner('Password should contain at least 8 characters.'),
+            const SizedBox(height: 20),
+            _primaryButton('Save Password', saving, save),
+          ],
+        );
+      }),
+    );
+  }
+
+  // ---------- Change Email: password -> new email -> OTP ----------
+
+    void _changeEmail() {
+      final passwordC = TextEditingController();
+      final newEmailC = TextEditingController();
+      final otpC = TextEditingController();
+      bool showPassword = false;
+      bool loading = false;
+      int step = 0; 
+
+      _showSheet(
+        StatefulBuilder(builder: (context, setSheetState) {
+          Future<void> verifyPassword() async {
+            if (passwordC.text.isEmpty) {
+              return _snack('Password is required', AppColors.warning);
+            }
+            setSheetState(() => loading = true);
+            final res = await ProfileService.verifyPassword(passwordC.text);
+            setSheetState(() => loading = false);
+
+            if (res['status'] == 'success') {
+              setSheetState(() => step = 1);
+            } else {
+              _snack(res['message'] ?? 'Incorrect password', AppColors.danger);
+            }
+          }
+
+          Future<void> sendOtp() async {
+            final newEmail = newEmailC.text.trim();
+            if (newEmail.isEmpty || !newEmail.contains('@')) {
+              return _snack('Enter a valid email', AppColors.warning);
+            }
+            setSheetState(() => loading = true);
+            final res = await ProfileService.sendEmailChangeOtp(newEmail);
+            setSheetState(() => loading = false);
+
+            if (res['status'] == 'success') {
+              setSheetState(() => step = 2);
+            } else {
+              _snack(res['message'] ?? 'Failed to send OTP', AppColors.danger);
+            }
+          }
+
+          Future<void> verifyOtp() async {
+            if (otpC.text.trim().isEmpty) {
+              return _snack('OTP is required', AppColors.warning);
+            }
+            
+            final targetEmail = newEmailC.text.trim();
+
+            setSheetState(() => loading = true);
+            final res = await ProfileService.verifyEmailChangeOtp(
+              email: targetEmail, 
+              otp: otpC.text.trim(),
+            );
+            setSheetState(() => loading = false);
+
+            if (res['status'] == 'success') {
+              Navigator.pop(context);
+              setState(() {
+                email = targetEmail; 
+                emailC.text = targetEmail; 
+              });
+              _snack('Email updated', AppColors.primary);
+            } else {
+              _snack(res['message'] ?? 'Invalid or expired OTP', AppColors.danger);
+            }
+          }
+
+          switch (step) {
+            case 1:
+              return _sheetScaffold(
+                title: 'New Email',
+                subtitle: 'We will send a verification code to this address.',
+                children: [
+                  TextField(
+                    controller: newEmailC,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: _input('New Email', Icons.email_outlined),
+                  ),
+                  const SizedBox(height: 20),
+                  _primaryButton('Send OTP', loading, sendOtp),
+                ],
+              );
+            case 2:
+              return _sheetScaffold(
+                title: 'Verify Email',
+                subtitle: 'Enter the code sent to ${newEmailC.text.trim()}.',
+                children: [
+                  TextField(
+                    controller: otpC,
+                    keyboardType: TextInputType.number,
+                    decoration: _input('OTP Code', Icons.pin_outlined),
+                  ),
+                  const SizedBox(height: 20),
+                  _primaryButton('Verify & Update', loading, verifyOtp),
+                ],
+              );
+            default:
+              return _sheetScaffold(
+                title: 'Change Email',
+                subtitle: 'Confirm your account password to continue.',
+                children: [
+                  _passwordField(passwordC, 'Account Password', showPassword,
+                      () => setSheetState(() => showPassword = !showPassword)),
+                  const SizedBox(height: 20),
+                  _primaryButton('Continue', loading, verifyPassword),
+                ],
+              );
+          }
+        }),
+      );
+    }
+
+  void _showSheet(Widget child, {EdgeInsets? padding}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -200,175 +330,95 @@ class _ProfilePageState extends State<ProfilePage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            Future<void> savePassword() async {
-              if (currentC.text.isEmpty || newC.text.isEmpty || confirmC.text.isEmpty) {
-                _showSnack('All password fields are required', AppColors.warning);
-                return;
-              }
+      builder: (_) => Padding(
+        padding: padding ??
+            EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
+        child: child,
+      ),
+    );
+  }
 
-              if (newC.text.length < 8) {
-                _showSnack('Password must be at least 8 characters', AppColors.warning);
-                return;
-              }
+  Widget _sheetScaffold({
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+  }) {
+    return ListView(
+      shrinkWrap: true,
+      children: [
+        Center(
+          child: Container(
+            width: 42,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        const SizedBox(height: 18),
+        ...children,
+      ],
+    );
+  }
 
-              if (newC.text != confirmC.text) {
-                _showSnack('Password does not match', AppColors.danger);
-                return;
-              }
+  Widget _infoBanner(String text) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: AppColors.primary, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          ),
+        ],
+      ),
+    );
+  }
 
-              setSheetState(() => savingPassword = true);
-
-              final res = await ProfileService.changePassword(
-                oldPassword: currentC.text,
-                newPassword: newC.text,
-              );
-
-              setSheetState(() => savingPassword = false);
-
-              if (res['status'] == 'success') {
-                Navigator.pop(context);
-                _showSnack('Password updated', AppColors.primary);
-              } else {
-                _showSnack(res['message'] ?? 'Failed to update password', AppColors.danger);
-              }
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 42,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.textSecondary.withOpacity(0.25),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Change Password',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Use a strong password to keep your account secure.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  _passwordField(
-                    currentC,
-                    'Current Password',
-                    showCurrent,
-                        () => setSheetState(() => showCurrent = !showCurrent),
-                  ),
-                  const SizedBox(height: 12),
-
-                  _passwordField(
-                    newC,
-                    'New Password',
-                    showNew,
-                        () => setSheetState(() => showNew = !showNew),
-                  ),
-                  const SizedBox(height: 12),
-
-                  _passwordField(
-                    confirmC,
-                    'Confirm Password',
-                    showConfirm,
-                        () => setSheetState(() => showConfirm = !showConfirm),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.info_outline, color: AppColors.primary, size: 18),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Password should contain at least 8 characters.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: savingPassword ? null : savePassword,
-                      child: savingPassword
-                          ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                          : const Text(
-                        'Save Password',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+  Widget _primaryButton(String label, bool loading, VoidCallback onPressed) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        onPressed: loading ? null : onPressed,
+        child: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
+      ),
     );
   }
 
   Widget _passwordField(
-      TextEditingController controller,
-      String hint,
-      bool visible,
-      VoidCallback toggle,
-      ) {
+    TextEditingController controller,
+    String hint,
+    bool visible,
+    VoidCallback toggle,
+  ) {
     return TextField(
       controller: controller,
       obscureText: !visible,
@@ -384,22 +434,13 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
         filled: true,
         fillColor: AppColors.background,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     );
   }
 
-  Widget _sheetItem(
-      IconData icon,
-      String text, {
-        bool danger = false,
-        VoidCallback? onTap,
-      }) {
+  Widget _sheetItem(IconData icon, String text, {bool danger = false, VoidCallback? onTap}) {
     final color = danger ? AppColors.danger : AppColors.textPrimary;
-
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, color: color),
@@ -408,12 +449,12 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  // ---------- Build ----------
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
+      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
     }
 
     return ListView(
@@ -421,13 +462,10 @@ class _ProfilePageState extends State<ProfilePage> {
       children: [
         _profileHeader(),
         const SizedBox(height: 20),
-
         _sectionTitle('Personal Info'),
         const SizedBox(height: 10),
         _personalInfoCard(),
-
         const SizedBox(height: 20),
-
         _sectionTitle('Security'),
         const SizedBox(height: 10),
         _menuTile(
@@ -436,15 +474,18 @@ class _ProfilePageState extends State<ProfilePage> {
           subtitle: 'Update your account password',
           onTap: _changePassword,
         ),
-
+        const SizedBox(height: 10),
+        _menuTile(
+          icon: Icons.alternate_email,
+          title: 'Change Email',
+          subtitle: 'Update the email linked to your account',
+          onTap: _changeEmail,
+        ),
         const SizedBox(height: 20),
-
         _sectionTitle('App Settings'),
         const SizedBox(height: 10),
         _budgetSettingTile(),
-
         const SizedBox(height: 24),
-
         FilledButton.icon(
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.danger,
@@ -452,10 +493,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           onPressed: _logout,
           icon: const Icon(Icons.logout, color: Colors.white),
-          label: const Text(
-            'Logout',
-            style: TextStyle(color: Colors.white),
-          ),
+          label: const Text('Logout', style: TextStyle(color: Colors.white)),
         ),
       ],
     );
@@ -477,10 +515,22 @@ class _ProfilePageState extends State<ProfilePage> {
                   CircleAvatar(
                     radius: 42,
                     backgroundColor: Colors.white24,
-                    backgroundImage: profileImage != null ? FileImage(profileImage!) : null,
-                    child: profileImage == null
-                        ? const Icon(Icons.person, size: 46, color: Colors.white)
-                        : null,
+                    backgroundImage:
+                         profileImage != null
+                            ? FileImage(profileImage!)
+                            : (AppData().profilePhoto.isNotEmpty
+                                   ? NetworkImage(
+                                      '${ApiService.baseUrl.replaceAll('/api', '')}/${AppData().profilePhoto}',
+                                     )
+                                   : null) as ImageProvider?,
+                    child: profileImage == null &&
+                             AppData().profilePhoto.isEmpty
+                         ? const Icon(
+                            Icons.person,
+                             size: 46,
+                             color: Colors.white,
+                          )
+                         : null,
                   ),
                   Positioned(
                     right: 0,
@@ -488,11 +538,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: CircleAvatar(
                       radius: 14,
                       backgroundColor: AppColors.surface,
-                      child: Icon(
-                        Icons.camera_alt,
-                        size: 14,
-                        color: AppColors.primary,
-                      ),
+                      child: Icon(Icons.camera_alt, size: 14, color: AppColors.primary),
                     ),
                   ),
                 ],
@@ -501,16 +547,9 @@ class _ProfilePageState extends State<ProfilePage> {
             const SizedBox(height: 12),
             Text(
               name.isNotEmpty ? name : 'User',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
             ),
-            Text(
-              email.isNotEmpty ? email : '-',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
+            Text(email.isNotEmpty ? email : '-', style: const TextStyle(color: Colors.white70, fontSize: 12)),
           ],
         ),
       ),
@@ -547,17 +586,12 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _editForm() {
+    Widget _editForm() {
     return Column(
       children: [
         TextField(
-          controller: nameC,
-          decoration: _input('Name', Icons.person_outline),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: emailC,
-          decoration: _input('Email', Icons.email_outlined),
+          controller: nameC, 
+          decoration: _input('Name', Icons.person_outline)
         ),
         const SizedBox(height: 14),
         Row(
@@ -567,10 +601,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 onPressed: isSaving
                     ? null
                     : () {
-                  nameC.text = name;
-                  emailC.text = email;
-                  setState(() => isEditing = false);
-                },
+                        nameC.text = name;
+                        setState(() => isEditing = false);
+                      },
                 child: const Text('Cancel'),
               ),
             ),
@@ -578,22 +611,14 @@ class _ProfilePageState extends State<ProfilePage> {
             Expanded(
               child: FilledButton(
                 onPressed: isSaving ? null : _saveProfile,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                ),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
                 child: isSaving
                     ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-                    : const Text(
-                  'Save',
-                  style: TextStyle(color: Colors.white),
-                ),
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Save', style: TextStyle(color: Colors.white)),
               ),
             ),
           ],
@@ -611,11 +636,8 @@ class _ProfilePageState extends State<ProfilePage> {
         onChanged: (value) {
           setState(() => budgetEnabled = value);
           AppData().budgetRecommendationEnabled = value;
-
-          _showSnack(
-            value
-                ? 'Budget recommendation enabled'
-                : 'Budget recommendation disabled',
+          _snack(
+            value ? 'Budget recommendation enabled' : 'Budget recommendation disabled',
             AppColors.primary,
           );
         },
@@ -623,10 +645,7 @@ class _ProfilePageState extends State<ProfilePage> {
           backgroundColor: AppColors.warning.withOpacity(0.12),
           child: const Icon(Icons.savings_outlined, color: AppColors.warning),
         ),
-        title: const Text(
-          'Enable Budget Recommendation',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+        title: const Text('Enable Budget Recommendation', style: TextStyle(fontWeight: FontWeight.w700)),
         subtitle: Text(
           budgetEnabled
               ? 'Budget suggestion is shown in statistics'
@@ -653,10 +672,7 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Icon(icon, color: AppColors.primary),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(
-          subtitle,
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
         trailing: const Icon(Icons.chevron_right),
       ),
     );
@@ -671,17 +687,8 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              Text(
-                value.isNotEmpty ? value : '-',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
+              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text(value.isNotEmpty ? value : '-', style: const TextStyle(fontWeight: FontWeight.w700)),
             ],
           ),
         ),
@@ -692,11 +699,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _sectionTitle(String text) {
     return Text(
       text,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: AppColors.textPrimary,
-      ),
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
     );
   }
 
@@ -706,10 +709,7 @@ class _ProfilePageState extends State<ProfilePage> {
       prefixIcon: Icon(icon, color: AppColors.primary),
       filled: true,
       fillColor: AppColors.background,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
     );
   }
 }

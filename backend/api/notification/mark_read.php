@@ -3,8 +3,7 @@
 include_once '../config/response.php';
 include_once '../config/database.php';
 
-/** @var mysqli $conn */
-
+$conn = getDB();
 $id = $_GET['id'] ?? null;
 
 if (!$id) {
