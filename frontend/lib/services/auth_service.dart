@@ -1,7 +1,5 @@
 import 'api_service.dart';
 import '../data/app_data.dart';
-import 'api_service.dart';
-import '../data/app_data.dart';
 import 'session_service.dart';
 
 class AuthService {
