@@ -4,6 +4,7 @@ import '../constants/colors.dart';
 import '../models/product_model.dart';
 import 'product_detail_page.dart';
 import '../services/api_service.dart';
+import 'package:quickalert/quickalert.dart';
 
 class CategoryDetailPage extends StatefulWidget {
   final int categoryId;
@@ -88,17 +89,24 @@ Future<void> _increaseQty(Product p) async {
 );
 
   if (success) {
-    await _loadProducts();
+QuickAlert.show(
+  context: context,
+  type: QuickAlertType.success,
+  title: 'Success',
+  text: 'Stock updated successfully.',
+);
   } else {
     if (!mounted) return;
 
     setState(() {
       _isLoading = false;
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Failed to update stock')),
-    );
+QuickAlert.show(
+  context: context,
+  type: QuickAlertType.error,
+  title: 'Failed',
+  text: 'Failed to update stock.',
+);
   }
 }
 

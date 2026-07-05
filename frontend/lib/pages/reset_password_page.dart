@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
-
+import 'package:quickalert/quickalert.dart';
 class ResetPasswordPage extends StatefulWidget {
   final String email;
 
@@ -35,72 +35,89 @@ class _ResetPasswordPageState
     super.dispose();
   }
 
-  void _showMessage(
-    String message, {
-    bool error = false,
-  }) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor:
-            error ? Colors.red : AppColors.primary,
-      ),
+
+
+Future<void> _resetPassword() async {
+  final password = _passwordController.text.trim();
+  final confirm = _confirmController.text.trim();
+
+  if (password.isEmpty || confirm.isEmpty) {
+    QuickAlert.show(
+      context: context,
+      type: QuickAlertType.error,
+      title: "Error",
+      text: "Semua field wajib diisi",
     );
+    return;
   }
 
-  Future<void> _resetPassword() async {
-    final password = _passwordController.text.trim();
-    final confirm = _confirmController.text.trim();
-
-    if (password.isEmpty || confirm.isEmpty) {
-      _showMessage(
-        "Semua field wajib diisi",
-        error: true,
-      );
-      return;
-    }
-
-    if (password.length < 6) {
-      _showMessage(
-        "Password minimal 6 karakter",
-        error: true,
-      );
-      return;
-    }
-
-    if (password != confirm) {
-      _showMessage(
-        "Konfirmasi password tidak sama",
-        error: true,
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    final result = await AuthService.resetPassword(
-      email: widget.email,
-      password: password,
+  if (password.length < 6) {
+    QuickAlert.show(
+      context: context,
+      type: QuickAlertType.error,
+      title: "Error",
+      text: "Password minimal 6 karakter",
     );
-
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-
-    if (result["success"] == true) {
-      _showMessage(result["message"]);
-
-      Navigator.popUntil(
-        context,
-        (route) => route.isFirst,
-      );
-    } else {
-      _showMessage(
-        result["message"],
-        error: true,
-      );
-    }
+    return;
   }
+
+  if (password != confirm) {
+    QuickAlert.show(
+      context: context,
+      type: QuickAlertType.error,
+      title: "Error",
+      text: "Konfirmasi password tidak sama",
+    );
+    return;
+  }
+
+  QuickAlert.show(
+    context: context,
+    type: QuickAlertType.confirm,
+    title: "Reset Password",
+    text: "Are you sure you want to reset your password?",
+    confirmBtnText: "Yes",
+    cancelBtnText: "No",
+    onConfirmBtnTap: () async {
+      Navigator.pop(context);
+
+      setState(() => _isLoading = true);
+
+      final result = await AuthService.resetPassword(
+        email: widget.email,
+        password: password,
+      );
+
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      if (result["success"] == true) {
+        QuickAlert.show(
+          context: context,
+          type: QuickAlertType.success,
+          title: "Success",
+          text: result["message"] ?? "Password berhasil diubah",
+          onConfirmBtnTap: () {
+            Navigator.pop(context);
+
+            Navigator.popUntil(
+              context,
+              (route) => route.isFirst,
+            );
+          },
+        );
+      } else {
+        QuickAlert.show(
+          context: context,
+          type: QuickAlertType.error,
+          title: "Failed",
+          text: result["message"] ?? "Gagal mengubah password",
+        );
+      }
+    },
+  );
+}
 
   InputDecoration _input(
     String hint,

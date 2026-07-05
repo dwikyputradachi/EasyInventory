@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../constants/colors.dart';
 import '../models/product_model.dart';
 import '../services/api_service.dart';
+import 'package:quickalert/quickalert.dart';
+import 'package:flutter/services.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final Product product;
@@ -16,7 +18,30 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   late Product product;
 
   final units = const ['pcs', 'kg', 'gram', 'liter', 'ml', 'botol', 'bungkus'];
+  String _formatRupiah(String value) {
+  final number = value.replaceAll(RegExp(r'[^0-9]'), '');
 
+  if (number.isEmpty) return '';
+
+  final chars = number.split('').reversed.toList();
+  final result = <String>[];
+
+  for (int i = 0; i < chars.length; i++) {
+    if (i > 0 && i % 3 == 0) {
+      result.add('.');
+    }
+    result.add(chars[i]);
+  }
+
+  return result.reversed.join();
+}
+
+int _parseRupiah(String value) {
+  return int.tryParse(
+        value.replaceAll('.', ''),
+      ) ??
+      0;
+}
   @override
   void initState() {
     super.initState();
@@ -36,21 +61,37 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () async {
-              final success = await ApiService.deleteItem(product.id);
+onPressed: () async {
+  final success = await ApiService.deleteItem(product.id);
 
-              if (!success) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to delete product')),
-                );
-                return;
-              }
+  if (!mounted) return;
 
-              if (!mounted) return;
-              Navigator.pop(context);
-              Navigator.pop(context, 'deleted');
-            },
+  if (!success) {
+    Navigator.pop(context);
+
+    QuickAlert.show(
+      context: context,
+      type: QuickAlertType.error,
+      title: 'Delete Failed',
+      text: 'Failed to delete product.',
+    );
+
+    return;
+  }
+
+  Navigator.pop(context);
+
+  await QuickAlert.show(
+    context: context,
+    type: QuickAlertType.success,
+    title: 'Deleted',
+    text: 'Product deleted successfully.',
+    confirmBtnText: 'OK',
+  );
+
+  if (!mounted) return;
+  Navigator.pop(context, 'deleted');
+},
             child: const Text("Delete"),
           ),
         ],
@@ -61,7 +102,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   void _editProduct() {
     final nameC = TextEditingController(text: product.name);
     final qtyC = TextEditingController(text: product.stock.toString());
-    final priceC = TextEditingController(text: product.price.toString());
+    final priceC = TextEditingController(
+  text: _formatRupiah(product.price.toString()),
+);
     final barcodeC = TextEditingController(text: product.barcode ?? '');
 
     String unit = product.unit;
@@ -125,10 +168,23 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: priceC,
-                  keyboardType: TextInputType.number,
-                  decoration: _input("Price"),
-                ),
+  controller: priceC,
+  keyboardType: TextInputType.number,
+  inputFormatters: [
+    FilteringTextInputFormatter.digitsOnly,
+    TextInputFormatter.withFunction((oldValue, newValue) {
+      final formatted = _formatRupiah(newValue.text);
+
+      return TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(
+          offset: formatted.length,
+        ),
+      );
+    }),
+  ],
+  decoration: _input("Price"),
+),
                 const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
@@ -187,7 +243,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           'name': nameC.text.trim(),
                           'quantity':
                               int.tryParse(qtyC.text) ?? product.stock,
-                          'price': int.tryParse(priceC.text) ?? product.price,
+                    'price': _parseRupiah(priceC.text),
                           'unit': unit,
                           'barcode': barcodeC.text.trim(),
                           'expired_date':
@@ -195,19 +251,30 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         },
                       );
 
-                      if (!success) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Failed to update product'),
-                          ),
-                        );
-                        return;
-                      }
+if (!mounted) return;
 
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      Navigator.pop(context, true);
+if (!success) {
+  QuickAlert.show(
+    context: context,
+    type: QuickAlertType.error,
+    title: 'Update Failed',
+    text: 'Failed to update product.',
+  );
+  return;
+}
+
+Navigator.pop(context);
+
+await QuickAlert.show(
+  context: context,
+  type: QuickAlertType.success,
+  title: 'Success',
+  text: 'Product updated successfully.',
+);
+
+if (!mounted) return;
+
+Navigator.pop(context, true);
                     },
                     child: const Text(
                       "Save Changes",
@@ -286,7 +353,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
                 const Divider(height: 30),
                 _rowInfo("Stock", "${product.stock} ${product.unit}"),
-                _rowInfo("Price", "Rp ${product.price}"),
+            _rowInfo(
+  "Price",
+  "Rp ${_formatRupiah(product.price.toString())}",
+),
                 _rowInfo("Expired", expiredDate),
                 if (product.barcode != null && product.barcode!.isNotEmpty)
                   _rowInfo("Barcode", product.barcode!),

@@ -135,7 +135,7 @@ Future<void> _fillProductByBarcode(String barcode) async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content:
-        Text('Produk ditemukan, data otomatis terisi'),
+        Text('The product has been found, data automatically filled.'),
       ),
     );
 
@@ -164,7 +164,7 @@ Future<void> _fillProductByBarcode(String barcode) async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content:
-        Text('Produk baru, silahkan isi data'),
+        Text('New product, please fill in the data'),
       ),
     );
 
@@ -222,20 +222,24 @@ Future<void> _saveProduct() async {
   if (!mounted) return;
 
 if (success) {
+  if (!mounted) return;
+
   ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Produk berhasil disimpan')),
+    const SnackBar(
+      content: Text('The product has been successfully saved.'),
+    ),
   );
 
-  _formKey.currentState!.reset();
+  // Bersihkan form
   _nameC.clear();
   _qtyC.clear();
-  _barcodeC.clear();
   _priceC.clear();
-  _qtyC.clear();
-  _unit = 'pcs';
-  _expiredDate = null;
+  _barcodeC.clear();
 
-  setState(() {});
+  setState(() {
+    _unit = 'pcs';
+    _expiredDate = null;
+  });
 }
 }
 

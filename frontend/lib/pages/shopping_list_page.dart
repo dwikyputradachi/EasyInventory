@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../constants/colors.dart';
 import '../services/shopping_list_service.dart';
 import '../data/app_data.dart';
+import 'package:quickalert/quickalert.dart';
 
 class ShoppingListPage extends StatefulWidget {
   const ShoppingListPage({super.key});
@@ -176,7 +177,12 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
 
                           Navigator.pop(context);
 
-                          await _loadShoppingList();
+                   QuickAlert.show(
+  context: context,
+  type: QuickAlertType.success,
+  title: 'Success',
+  text: 'Shopping item added successfully.',
+);
                         } catch (e) {
                           _showError(e.toString());
                         }

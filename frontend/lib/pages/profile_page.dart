@@ -6,6 +6,8 @@ import '../services/profile_service.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
+import 'package:quickalert/quickalert.dart';
+
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -87,16 +89,41 @@ class _ProfilePageState extends State<ProfilePage> {
         name = nameC.text.trim();
         isEditing = false;
       });
-      _snack('Profile updated successfully', AppColors.primary);
+ QuickAlert.show(
+  context: context,
+  type: QuickAlertType.success,
+  title: 'Success',
+  text: 'Profile updated successfully.',
+);
     } else {
       _snack(res['message'] ?? 'Failed to update profile', AppColors.danger);
     }
   }
 
-  void _logout() {
-    AuthService.logout();
-    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-  }
+Future<void> _logout() async {
+  QuickAlert.show(
+    context: context,
+    type: QuickAlertType.confirm,
+    title: 'Logout',
+    text: 'Are you sure you want to logout?',
+    showCancelBtn: true,
+    confirmBtnText: 'Logout',
+    cancelBtnText: 'Cancel',
+    onConfirmBtnTap: () async {
+      Navigator.pop(context);
+
+      await AuthService.logout();
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/login',
+        (route) => false,
+      );
+    },
+  );
+}
 
   void _snack(String message, Color color) {
     ScaffoldMessenger.of(context)
@@ -180,7 +207,12 @@ class _ProfilePageState extends State<ProfilePage> {
 
           if (res['status'] == 'success') {
             Navigator.pop(context);
-            _snack('Password updated', AppColors.primary);
+          QuickAlert.show(
+  context: context,
+  type: QuickAlertType.success,
+  title: 'Success',
+  text: 'Password updated successfully.',
+);
           } else {
             _snack(res['message'] ?? 'Failed to update password', AppColors.danger);
           }
@@ -271,7 +303,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 email = targetEmail; 
                 emailC.text = targetEmail; 
               });
-              _snack('Email updated', AppColors.primary);
+            QuickAlert.show(
+  context: context,
+  type: QuickAlertType.success,
+  title: 'Success',
+  text: 'Email updated successfully.',
+);
             } else {
               _snack(res['message'] ?? 'Invalid or expired OTP', AppColors.danger);
             }

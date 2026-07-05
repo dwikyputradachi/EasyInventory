@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../constants/colors.dart';
 import '../services/api_service.dart';
+import 'package:quickalert/quickalert.dart';
 
 class NotificationPage extends StatefulWidget {
   const NotificationPage({super.key});
@@ -56,57 +57,87 @@ class _NotificationPageState extends State<NotificationPage> {
     }
   }
 
-  Future<void> markAsRead(Map<String, dynamic> group) async {
-    final ids = group['ids'] as List<dynamic>? ?? [];
+Future<void> markAsRead(Map<String, dynamic> group) async {
+  QuickAlert.show(
+    context: context,
+    type: QuickAlertType.confirm,
+    title: "Delete Notification",
+    text: "Are you sure you want to delete this notification?",
+    confirmBtnText: "Yes",
+    cancelBtnText: "No",
+    onConfirmBtnTap: () async {
+      Navigator.pop(context);
 
-    final List<Future<dynamic>> futures = [];
-    for (final id in ids) {
-      if (id != null) {
-        futures.add(ApiService.markNotificationAsRead(id.toString()));
+      final ids = group['ids'] as List<dynamic>? ?? [];
+
+      final List<Future<dynamic>> futures = [];
+
+      for (final id in ids) {
+        if (id != null) {
+          futures.add(
+            ApiService.markNotificationAsRead(id.toString()),
+          );
+        }
       }
-    }
 
-    if (futures.isNotEmpty) {
-      await Future.wait(futures); 
-    }
+      if (futures.isNotEmpty) {
+        await Future.wait(futures);
+      }
 
-    await fetchNotifications();
-  }
+      await fetchNotifications();
+
+      if (!mounted) return;
+
+      QuickAlert.show(
+        context: context,
+        type: QuickAlertType.success,
+        title: "Deleted",
+        text: "Notification deleted successfully.",
+      );
+    },
+  );
+}
 
   Future<void> markAllAsRead() async {
-    if (notifications.isEmpty) return;
+  if (notifications.isEmpty) return;
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Clear all notifications?'),
-        content: const Text('All notifications will be removed from this list.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Clear All'),
-          ),
-        ],
-      ),
-    );
+  QuickAlert.show(
+    context: context,
+    type: QuickAlertType.confirm,
+    title: "Clear Notifications",
+    text: "Are you sure you want to delete all notifications?",
+    confirmBtnText: "Yes",
+    cancelBtnText: "No",
+    onConfirmBtnTap: () async {
+      Navigator.pop(context);
 
-    if (confirm != true) return;
+      final success =
+          await ApiService.markAllNotificationsAsRead();
 
-    final success = await ApiService.markAllNotificationsAsRead();
+      if (success) {
+        await fetchNotifications();
 
-    if (success) {
-      await fetchNotifications();
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to clear notifications')),
-      );
-    }
-  }
+        if (!mounted) return;
+
+        QuickAlert.show(
+          context: context,
+          type: QuickAlertType.success,
+          title: "Success",
+          text: "All notifications have been deleted.",
+        );
+      } else {
+        if (!mounted) return;
+
+        QuickAlert.show(
+          context: context,
+          type: QuickAlertType.error,
+          title: "Failed",
+          text: "Failed to delete notifications.",
+        );
+      }
+    },
+  );
+}
 
   Color _color(List<String> types) {
     if (types.contains('expired')) return AppColors.danger;
