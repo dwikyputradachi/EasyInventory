@@ -1,12 +1,14 @@
 <?php
 
+
 include_once '../config/response.php';
 include_once '../config/database.php';
 
-/** @var mysqli $conn */
+$conn = getDB();
 
-$id_item = $_GET['id_item'] ?? null;
 $data = json_decode(file_get_contents("php://input"), true);
+
+$id_item = $data['id_item'] ?? null;
 
 if (!$id_item) {
     echo json_encode([

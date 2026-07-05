@@ -222,20 +222,13 @@ Future<void> _saveProduct() async {
   if (!mounted) return;
 
 if (success) {
+  if (!mounted) return;
+
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(content: Text('Produk berhasil disimpan')),
   );
 
-  _formKey.currentState!.reset();
-  _nameC.clear();
-  _qtyC.clear();
-  _barcodeC.clear();
-  _priceC.clear();
-  _qtyC.clear();
-  _unit = 'pcs';
-  _expiredDate = null;
-
-  setState(() {});
+  Navigator.pop(context, true);
 }
 }
 
