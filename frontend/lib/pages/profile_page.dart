@@ -101,7 +101,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
 Future<void> _logout() async {
-  final result = await QuickAlert.show(
+  QuickAlert.show(
     context: context,
     type: QuickAlertType.confirm,
     title: 'Logout',
@@ -109,16 +109,20 @@ Future<void> _logout() async {
     showCancelBtn: true,
     confirmBtnText: 'Logout',
     cancelBtnText: 'Cancel',
-  );
+    onConfirmBtnTap: () async {
+      Navigator.pop(context);
 
-  if (result == true) {
-    AuthService.logout();
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/login',
-      (_) => false,
-    );
-  }
+      await AuthService.logout();
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/login',
+        (route) => false,
+      );
+    },
+  );
 }
 
   void _snack(String message, Color color) {

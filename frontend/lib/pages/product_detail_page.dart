@@ -3,6 +3,7 @@ import '../constants/colors.dart';
 import '../models/product_model.dart';
 import '../services/api_service.dart';
 import 'package:quickalert/quickalert.dart';
+import 'package:flutter/services.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final Product product;
@@ -17,7 +18,30 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   late Product product;
 
   final units = const ['pcs', 'kg', 'gram', 'liter', 'ml', 'botol', 'bungkus'];
+  String _formatRupiah(String value) {
+  final number = value.replaceAll(RegExp(r'[^0-9]'), '');
 
+  if (number.isEmpty) return '';
+
+  final chars = number.split('').reversed.toList();
+  final result = <String>[];
+
+  for (int i = 0; i < chars.length; i++) {
+    if (i > 0 && i % 3 == 0) {
+      result.add('.');
+    }
+    result.add(chars[i]);
+  }
+
+  return result.reversed.join();
+}
+
+int _parseRupiah(String value) {
+  return int.tryParse(
+        value.replaceAll('.', ''),
+      ) ??
+      0;
+}
   @override
   void initState() {
     super.initState();
@@ -78,7 +102,9 @@ onPressed: () async {
   void _editProduct() {
     final nameC = TextEditingController(text: product.name);
     final qtyC = TextEditingController(text: product.stock.toString());
-    final priceC = TextEditingController(text: product.price.toString());
+    final priceC = TextEditingController(
+  text: _formatRupiah(product.price.toString()),
+);
     final barcodeC = TextEditingController(text: product.barcode ?? '');
 
     String unit = product.unit;
@@ -142,10 +168,23 @@ onPressed: () async {
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: priceC,
-                  keyboardType: TextInputType.number,
-                  decoration: _input("Price"),
-                ),
+  controller: priceC,
+  keyboardType: TextInputType.number,
+  inputFormatters: [
+    FilteringTextInputFormatter.digitsOnly,
+    TextInputFormatter.withFunction((oldValue, newValue) {
+      final formatted = _formatRupiah(newValue.text);
+
+      return TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(
+          offset: formatted.length,
+        ),
+      );
+    }),
+  ],
+  decoration: _input("Price"),
+),
                 const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
@@ -204,7 +243,7 @@ onPressed: () async {
                           'name': nameC.text.trim(),
                           'quantity':
                               int.tryParse(qtyC.text) ?? product.stock,
-                          'price': int.tryParse(priceC.text) ?? product.price,
+                    'price': _parseRupiah(priceC.text),
                           'unit': unit,
                           'barcode': barcodeC.text.trim(),
                           'expired_date':
@@ -314,7 +353,10 @@ Navigator.pop(context, true);
                 ),
                 const Divider(height: 30),
                 _rowInfo("Stock", "${product.stock} ${product.unit}"),
-                _rowInfo("Price", "Rp ${product.price}"),
+            _rowInfo(
+  "Price",
+  "Rp ${_formatRupiah(product.price.toString())}",
+),
                 _rowInfo("Expired", expiredDate),
                 if (product.barcode != null && product.barcode!.isNotEmpty)
                   _rowInfo("Barcode", product.barcode!),
