@@ -8,14 +8,14 @@ import '../models/product_model.dart';
 class ApiService {
 static String get baseUrl {
   if (kIsWeb) {
-    return 'http://localhost/easy_inventory/api';
+    return 'https://easy-inventory-backend-production.up.railway.app/api';
   }
 
   if (defaultTargetPlatform == TargetPlatform.android) {
-    return 'http://192.168.100.15/easy_inventory/api';
+    return 'https://easy-inventory-backend-production.up.railway.app/api';
   }
 
-  return 'http://localhost/easy_inventory/api';
+  return 'https://easy-inventory-backend-production.up.railway.app/api';
 }
 
   static Map<String, String> get _headers {
@@ -27,9 +27,7 @@ static String get baseUrl {
     };
   }
 
-  // =====================================================
-  // GENERIC
-  // =====================================================
+
 
   static Future<Map<String, dynamic>> get(String endpoint) async {
     try {
