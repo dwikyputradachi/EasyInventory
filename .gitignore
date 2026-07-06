@@ -43,3 +43,20 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+# EasyInventory
+backend/vendor/
+
+# Flutter generated files
+frontend/windows/flutter/generated_*
+frontend/linux/flutter/generated_*
+frontend/macos/Flutter/GeneratedPluginRegistrant.swift
+
+# Flutter build/cache
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+# iOS generated/local file
+frontend/ios/Runner/SceneDelegate.swift
+*.code-workspace
