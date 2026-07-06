@@ -8,14 +8,14 @@ import '../models/product_model.dart';
 class ApiService {
 static String get baseUrl {
   if (kIsWeb) {
-    return 'http://localhost/easy_inventory/backend/api';
+    return 'http://localhost/easy_inventory/api';
   }
 
   if (defaultTargetPlatform == TargetPlatform.android) {
-    return 'http://10.0.2.2/easy_inventory/backend/api';
+    return 'http://192.168.100.15/easy_inventory/api';
   }
 
-  return 'http://localhost/easy_inventory/backend/api';
+  return 'http://localhost/easy_inventory/api';
 }
 
   static Map<String, String> get _headers {

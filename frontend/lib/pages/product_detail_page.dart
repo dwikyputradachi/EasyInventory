@@ -168,23 +168,23 @@ onPressed: () async {
                 ),
                 const SizedBox(height: 12),
                 TextField(
-  controller: priceC,
-  keyboardType: TextInputType.number,
-  inputFormatters: [
-    FilteringTextInputFormatter.digitsOnly,
-    TextInputFormatter.withFunction((oldValue, newValue) {
-      final formatted = _formatRupiah(newValue.text);
+                  controller: priceC,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    TextInputFormatter.withFunction((oldValue, newValue) {
+                      final formatted = _formatRupiah(newValue.text);
 
-      return TextEditingValue(
-        text: formatted,
-        selection: TextSelection.collapsed(
-          offset: formatted.length,
-        ),
-      );
-    }),
-  ],
-  decoration: _input("Price"),
-),
+                      return TextEditingValue(
+                        text: formatted,
+                        selection: TextSelection.collapsed(
+                          offset: formatted.length,
+                        ),
+                      );
+                    }),
+                  ],
+                  decoration: _input("Price"),
+                ),
                 const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
@@ -241,40 +241,41 @@ onPressed: () async {
                         product.id,
                         {
                           'name': nameC.text.trim(),
-                          'quantity':
-                              int.tryParse(qtyC.text) ?? product.stock,
-                    'price': _parseRupiah(priceC.text),
+                          'quantity': int.tryParse(qtyC.text) ?? product.stock,
+                          'price': _parseRupiah(priceC.text),
                           'unit': unit,
                           'barcode': barcodeC.text.trim(),
-                          'expired_date':
-                              expiredDate.toIso8601String().split('T').first,
+                          'expired_date': expiredDate.toIso8601String().split('T').first,
                         },
                       );
 
-if (!mounted) return;
+                      if (!mounted) return;
 
-if (!success) {
-  QuickAlert.show(
-    context: context,
-    type: QuickAlertType.error,
-    title: 'Update Failed',
-    text: 'Failed to update product.',
-  );
-  return;
-}
+                      if (!success) {
+                        QuickAlert.show(
+                          context: context,
+                          type: QuickAlertType.error,
+                          title: 'Update Failed',
+                          text: 'Failed to update product.',
+                        );
+                        return;
+                      }
 
-Navigator.pop(context);
+                      // 1. Tutup bottom sheet edit terlebih dahulu
+                      Navigator.pop(context);
 
-await QuickAlert.show(
-  context: context,
-  type: QuickAlertType.success,
-  title: 'Success',
-  text: 'Product updated successfully.',
-);
+                      // 2. Tampilkan SnackBar sebagai notifikasi sukses yang bersih tanpa pop-up mengganggu
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("${nameC.text.trim()} berhasil diperbarui!"),
+                          backgroundColor: Colors.green,
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
 
-if (!mounted) return;
-
-Navigator.pop(context, true);
+                      if (!mounted) return;
+                      Navigator.pop(context, true);
                     },
                     child: const Text(
                       "Save Changes",

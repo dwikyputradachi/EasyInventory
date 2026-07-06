@@ -86,12 +86,21 @@ class AmbiguousItemTile extends StatelessWidget {
     required this.onAdd,
   });
 
+  // Data dianggap lengkap & aman ditambah langsung kalau harga & qty
+  // sudah kebaca OCR dengan valid (bukan sekadar default 0/1).
+  bool get _hasCompleteData {
+    final price = parsed['price'];
+    final qty = parsed['quantity'];
+    return price is num && price > 0 && qty is num && qty > 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = parsed['name']?.toString() ?? '-';
     final category = parsed['category']?.toString() ?? 'Others';
     final price = (parsed['price'] as num?)?.toInt() ?? 0;
     final qty = (parsed['quantity'] as num?)?.toInt() ?? 1;
+    final complete = _hasCompleteData;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -109,8 +118,29 @@ class AmbiguousItemTile extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary))),
         ]),
         const SizedBox(height: 6),
-        Text('Qty $qty • Rp ${formatRupiah(price)} • $category',
-            style: const TextStyle(fontSize: 12, color: AppColors.textPrimary)),
+
+        // Kalau harga/qty belum kebaca, jangan tampilkan "Rp 0" yang menyesatkan.
+        // Tampilkan status yang jujur supaya user tahu ini wajib dilengkapi.
+        Row(children: [
+          Icon(
+            complete ? Icons.check_circle_outline : Icons.error_outline,
+            size: 13,
+            color: complete ? AppColors.primary : Colors.orange,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              complete
+                  ? 'Qty $qty • Rp ${formatRupiah(price)} • $category'
+                  : 'Harga/qty belum terbaca • lengkapi manual',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: complete ? FontWeight.normal : FontWeight.w600,
+                color: complete ? AppColors.textPrimary : Colors.orange,
+              ),
+            ),
+          ),
+        ]),
         if (rawText.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text('Raw: $rawText', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
@@ -118,16 +148,32 @@ class AmbiguousItemTile extends StatelessWidget {
         const SizedBox(height: 4),
         Text(reason, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
         const SizedBox(height: 10),
+
         Row(children: [
           Expanded(child: OutlinedButton(onPressed: onIgnore, child: const Text('Abaikan'))),
           const SizedBox(width: 8),
-          Expanded(child: OutlinedButton(onPressed: onEdit, child: const Text('Edit'))),
-          const SizedBox(width: 8),
-          Expanded(child: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: onAdd,
-            child: const Text('Tambah', style: TextStyle(color: Colors.white)),
-          )),
+
+          // Kalau data belum lengkap: sembunyikan "Tambah" (mencegah item
+          // masuk inventaris dengan harga Rp 0), jadikan tombol edit sebagai
+          // aksi utama dengan label yang jelas.
+          if (!complete)
+            Expanded(
+              flex: 2,
+              child: FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+                onPressed: onEdit,
+                child: const Text('Lengkapi Data', style: TextStyle(color: Colors.white)),
+              ),
+            )
+          else ...[
+            Expanded(child: OutlinedButton(onPressed: onEdit, child: const Text('Edit'))),
+            const SizedBox(width: 8),
+            Expanded(child: FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+              onPressed: onAdd,
+              child: const Text('Tambah', style: TextStyle(color: Colors.white)),
+            )),
+          ],
         ]),
       ]),
     );

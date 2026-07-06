@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import '../constants/colors.dart';
 import '../services/session_service.dart';
 
 class SplashPage extends StatefulWidget {
@@ -39,7 +39,7 @@ class _SplashPageState extends State<SplashPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF4CAF50),
+      backgroundColor: AppColors.primary,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

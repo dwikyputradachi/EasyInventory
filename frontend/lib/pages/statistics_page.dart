@@ -19,8 +19,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   late int _selectedYear;
   bool _isLoading = true;
-
-  // Data dari API
   List<Map<String, dynamic>> _monthly       = [];
   int                         _recommendation = 0;
 
@@ -32,10 +30,10 @@ class _StatisticsPageState extends State<StatisticsPage> {
   }
 
   Future<void> _fetchData() async {
-    if (AppData().token.isEmpty) {        
-    setState(() => _isLoading = false);
-    return;
-   }
+    if (AppData().token.isEmpty) {
+      setState(() => _isLoading = false);
+      return;
+    }
 
     setState(() => _isLoading = true);
     final res = await StatisticsService.getMonthlySpending(_selectedYear);
@@ -50,8 +48,9 @@ class _StatisticsPageState extends State<StatisticsPage> {
       setState(() => _isLoading = false);
     }
   }
-
-  // Cari total bulan tertentu dari list _monthly
+  Future<void> _onRefresh() async {
+    await _fetchData();
+  }
   int _totalForMonth(int month) {
     final found = _monthly.where((e) => e['month_num'] == month).firstOrNull;
     return found != null ? double.parse(found['total'].toString()).toInt() : 0;
@@ -65,39 +64,44 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
-      children: [
-        const Text("Statistics", style: TextStyle(
-          fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary,
-        )),
-        const SizedBox(height: 4),
-        const Text("Track your household spending pattern",
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: _onRefresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
+        children: [
+          const Text("Statistics", style: TextStyle(
+            fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary,
+          )),
+          const SizedBox(height: 4),
+          const Text("Track your household spending pattern",
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
 
-        const SizedBox(height: 18),
-        _summaryCard(),
-        const SizedBox(height: 16),
-        _yearChips(),
-        const SizedBox(height: 18),
+          const SizedBox(height: 18),
+          _summaryCard(),
+          const SizedBox(height: 16),
+          _yearChips(),
+          const SizedBox(height: 18),
 
-        const Text("Monthly Spending", style: TextStyle(
-          fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary,
-        )),
-        const SizedBox(height: 10),
+          const Text("Monthly Spending", style: TextStyle(
+            fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary,
+          )),
+          const SizedBox(height: 10),
 
-        if (_isLoading)
-          const Center(child: Padding(
-            padding: EdgeInsets.all(32),
-            child: CircularProgressIndicator(color: AppColors.primary),
-          ))
-        else
-          ...List.generate(12, (i) {
-            final month = i + 1;
-            final total = _totalForMonth(month);
-            return _monthTile(_months[i], month, total);
-          }),
-      ],
+          if (_isLoading)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(32),
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ))
+          else
+            ...List.generate(12, (i) {
+              final month = i + 1;
+              final total = _totalForMonth(month);
+              return _monthTile(_months[i], month, total);
+            }),
+        ],
+      ),
     );
   }
 
@@ -129,7 +133,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
   }
 
   Widget _yearChips() {
-    // Ambil tahun dari data + tahun sekarang
     final years = _monthly.map((e) {
       final parts = (e['month'] as String).split(' ');
       return int.tryParse(parts.last) ?? DateTime.now().year;

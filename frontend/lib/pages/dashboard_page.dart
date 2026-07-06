@@ -196,7 +196,7 @@ class _DashboardPageState extends State<DashboardPage> with AutomaticKeepAliveCl
               spacing: 10, 
               runSpacing: 10,
               children: [
-                _CategoryChip("Fresh Food", Icons.eco, const Color(0xFF22C55E), onTap: () => widget.onOpenInventory?.call('Fresh Food')),
+                _CategoryChip("Fresh Food", Icons.eco, const Color(0xFF64748B), onTap: () => widget.onOpenInventory?.call('Fresh Food')),
                 _CategoryChip("Pantry", Icons.kitchen, const Color(0xFF64748B), onTap: () => widget.onOpenInventory?.call('Pantry')),
                 _CategoryChip("Beverages", Icons.local_drink, const Color(0xFF64748B), onTap: () => widget.onOpenInventory?.call('Beverages')),
                 _CategoryChip("Toiletries", Icons.spa, const Color(0xFF64748B), onTap: () => widget.onOpenInventory?.call('Toiletries')),
@@ -212,8 +212,6 @@ class _DashboardPageState extends State<DashboardPage> with AutomaticKeepAliveCl
 
   Widget _header() {
     final name = AppData().name.isNotEmpty ? AppData().name : 'User';
-    final profileImagePath = AppData().profileImagePath;
-    final hasValidImage = profileImagePath.isNotEmpty && File(profileImagePath).existsSync();
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -226,8 +224,14 @@ class _DashboardPageState extends State<DashboardPage> with AutomaticKeepAliveCl
         CircleAvatar(
           radius: 22,
           backgroundColor: AppColors.primarySoft,
-          backgroundImage: hasValidImage ? FileImage(File(profileImagePath)) : null,
-          child: !hasValidImage ? const Icon(Icons.person_2_outlined, color: Colors.white) : null,
+          backgroundImage: AppData().profilePhoto.isNotEmpty
+              ? NetworkImage(
+            '${ApiService.baseUrl.replaceAll('/api', '')}/${AppData().profilePhoto}',
+          )
+              : null as ImageProvider?,
+          child: AppData().profilePhoto.isEmpty
+              ? const Icon(Icons.person_2_outlined, color: Colors.white)
+              : null,
         ),
       ],
     );

@@ -10,7 +10,7 @@ class OcrService {
     script: TextRecognitionScript.latin,
   );
 
-  static const String _version = 'STABLE-V11-MINIMARKET-PIPELINE';
+  static const String _version = 'STABLE-V12-VALIDATOR-PIPELINE';
 
   static Future<List<Map<String, dynamic>>?> scanFromCamera() async {
     final receipt = await scanReceiptFromCamera();
@@ -27,26 +27,48 @@ class OcrService {
   static Future<Map<String, dynamic>?> scanReceiptFromCamera() async {
     final picked = await _picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 85,        
-      maxWidth: 1600,         
-      maxHeight: 1600,         
+      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+
+    if (picked == null) return null;
+    return _processImage(File(picked.path));
+  }
+  static Future<File?> pickImageFromCamera() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    return picked != null ? File(picked.path) : null;
+  }
+  static Future<File?> pickImageFromGallery() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    return picked != null ? File(picked.path) : null;
+  }
+  static Future<Map<String, dynamic>?> scanReceiptFromFile(File file) async {
+    return _processImage(file);
+  }
+
+  static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
 
     if (picked == null) return null;
     return _processImage(File(picked.path));
   }
 
-static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
-    final picked = await _picker.pickImage(
-      source: ImageSource.gallery,   // 
-      imageQuality: 85,        
-      maxWidth: 1600,         
-      maxHeight: 1600,         
-    );
-
-    if (picked == null) return null;
-    return _processImage(File(picked.path));
-}
   static Future<Map<String, dynamic>?> _processImage(File imageFile) async {
     try {
       final inputImage = InputImage.fromFile(imageFile);
@@ -67,15 +89,11 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       final parsed = parseReceiptText(parseInput);
 
       print('========== PARSED RECEIPT ==========');
-      print('STORE     : ${parsed['store_name']}');
-      print('DATE      : ${parsed['date']}');
-      print('SUBTOTAL  : ${parsed['subtotal']}');
-      print('TOTAL     : ${parsed['total']}');
-      print('PAID      : ${parsed['paid']}');
-      print('CHANGE    : ${parsed['change']}');
-      print('SAVINGS   : ${parsed['savings']}');
-      print('TAX       : ${parsed['tax']}');
-      print('SERVICE   : ${parsed['service_charge']}');
+      print('STORE            : ${parsed['store_name']}');
+      print('DATE             : ${parsed['date']}');
+      print('OCR TOTAL        : ${parsed['ocr_detected_total']}');
+      print('CALCULATED TOTAL : ${parsed['calculated_total']}');
+      print('DIFFERENCE       : ${parsed['difference']}');
 
       print('========== PARSED ITEMS ==========');
       for (final item in parsed['items']) {
@@ -99,10 +117,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     }
   }
 
-  // =========================================================
-  // MAIN PIPELINE PARSER
-  // =========================================================
-
   static Map<String, dynamic> parseReceiptText(String rawText) {
     final lines = _normalizeLines(rawText);
 
@@ -114,30 +128,37 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     final discounts = _parseDiscounts(lines);
     final items = _parseItemsFromZone(lines, zone['itemStart']!, zone['itemEnd']!);
     final mergedItems = _mergeDuplicateItems(items);
-    final ambiguousItems = _collectAmbiguousItemsFromZone(
+
+    var ambiguousItems = _collectAmbiguousItemsFromZone(
       lines,
       zone['itemStart']!,
       zone['itemEnd']!,
       mergedItems,
     );
 
+    ambiguousItems = _mergeAmbiguousLists(
+      ambiguousItems,
+      findMissingItems(lines, zone['itemStart']!, zone['itemEnd']!, mergedItems, ambiguousItems),
+    );
+
     final sumItems = _sumItemTotals(mergedItems);
     final savings = summary['savings'] ?? _sumDiscounts(discounts);
 
     int? subtotal = summary['subtotal'];
+
+    final ocrDetectedTotal = summary['total'];
+
     int? total = summary['total'];
-
-    // Untuk minimarket, subtotal bisa dianggap jumlah item sebelum diskon.
     subtotal ??= sumItems;
-
-    // Alfamart kadang OCR Total Belanja jadi ",700". Jika total rusak/terlalu kecil,
-    // turunkan dari total item - diskon.
     final computedAfterDiscount = sumItems - (savings ?? 0);
     if (total == null || total <= 0) {
       total = computedAfterDiscount > 0 ? computedAfterDiscount : sumItems;
     } else if (sumItems > 0 && total < (sumItems * 0.5).round()) {
       total = computedAfterDiscount > 0 ? computedAfterDiscount : sumItems;
     }
+
+    final calculatedTotal = sumItems;
+    final int? difference = ocrDetectedTotal != null ? (calculatedTotal - ocrDetectedTotal) : null;
 
     final warnings = _buildWarnings(
       items: mergedItems,
@@ -154,6 +175,9 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       'ambiguous_items': ambiguousItems,
       'subtotal': subtotal,
       'total': total,
+      'ocr_detected_total': ocrDetectedTotal,
+      'calculated_total': calculatedTotal,
+      'difference': difference,
       'paid': summary['paid'],
       'change': summary['change'],
       'savings': savings,
@@ -167,9 +191,70 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     };
   }
 
-  // =========================================================
-  // OCR LINE EXTRACTION
-  // =========================================================
+  static List<Map<String, dynamic>> findMissingItems(
+      List<String> lines,
+      int itemStart,
+      int itemEnd,
+      List<Map<String, dynamic>> confirmedItems,
+      List<Map<String, dynamic>> ambiguousItems,
+      ) {
+    final missing = <Map<String, dynamic>>[];
+
+    final knownKeys = <String>{
+      ...confirmedItems.map((e) => _nameKey(e['name']?.toString() ?? '')),
+      ...ambiguousItems.map((e) => _nameKey(
+        (e['suggested_name'] ?? '').toString(),
+      )),
+    };
+
+    for (int i = itemStart; i < itemEnd; i++) {
+      final line = _normalizeText(lines[i]);
+      if (line.length < 3) continue;
+
+      final lower = _normalizeKeyword(line);
+      if (_isDiscountLine(lower)) continue;
+      if (_isIgnoredMinimarketCharge(lower)) continue;
+      if (_isDefinitelyNotItemLine(line)) continue;
+      if (!_looksLikeLooseProductName(line)) continue;
+
+      final cleaned = _cleanName(line);
+      final key = _nameKey(cleaned);
+      if (key.isEmpty || knownKeys.contains(key)) continue;
+
+      missing.add({
+        'raw_text': line,
+        'suggested_name': _toTitleCase(_normalizeProductNameSmart(cleaned)),
+        'suggested_price': null,
+        'suggested_quantity': 1,
+        'suggested_line_total': null,
+        'suggested_category': null,
+        'code': null,
+        'reason': 'Baris ini terlihat seperti nama produk tapi harga/qty tidak berhasil terbaca. Mohon lengkapi manual.',
+        'confidence': 0.40,
+      });
+
+      knownKeys.add(key);
+    }
+
+    return missing;
+  }
+
+  static List<Map<String, dynamic>> _mergeAmbiguousLists(
+      List<Map<String, dynamic>> a,
+      List<Map<String, dynamic>> b,
+      ) {
+    final result = List<Map<String, dynamic>>.from(a);
+    final existingKeys = a.map((e) => _nameKey((e['suggested_name'] ?? '').toString())).toSet();
+
+    for (final item in b) {
+      final key = _nameKey((item['suggested_name'] ?? '').toString());
+      if (existingKeys.contains(key)) continue;
+      result.add(item);
+      existingKeys.add(key);
+    }
+
+    return result;
+  }
 
   static List<String> _extractLinesByPosition(RecognizedText result) {
     final textLines = result.blocks
@@ -213,10 +298,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     return resultLines;
   }
 
-  // =========================================================
-  // PIPELINE: NORMALIZE / STORE / DATE / ZONE
-  // =========================================================
-
   static List<String> _normalizeLines(String rawText) {
     return rawText
         .split('\n')
@@ -234,13 +315,27 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
   }
 
   static String _normalizeKeyword(String text) {
-    return text
+    var result = text
         .toLowerCase()
         .replaceAll('!', 'i')
         .replaceAll('|', 'i')
         .replaceAll('_', ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+
+    result = _correctCommonTypos(result);
+    return result;
+  }
+  static String _correctCommonTypos(String lower) {
+    var text = lower;
+    text = text.replaceAll('tota1', 'total');
+    text = text.replaceAll('totai', 'total');
+    text = text.replaceAll('totol', 'total');
+    text = text.replaceAll('tunal', 'tunai');
+    text = text.replaceAll('tunar', 'tunai');
+    text = text.replaceAll('pajax', 'pajak');
+    text = text.replaceAll('kenball', 'kembali');
+    return text;
   }
 
   static String? _detectStoreName(List<String> lines) {
@@ -274,23 +369,8 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
 
   static bool _isBadStoreLine(String lower) {
     return _containsAny(lower, [
-      'jalan',
-      'jln ',
-      'jl ',
-      'rt.',
-      'rw.',
-      'blok',
-      'kec',
-      'kota',
-      'npw',
-      'npp',
-      'npwp',
-      'pt.',
-      'bon ',
-      'kasir',
-      'tgl',
-      'receipt',
-      'telp',
+      'jalan', 'jln ', 'jl ', 'rt.', 'rw.', 'blok', 'kec', 'kota',
+      'npw', 'npp', 'npwp', 'pt.', 'bon ', 'kasir', 'tgl', 'receipt', 'telp',
     ]);
   }
 
@@ -303,32 +383,20 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       final lower = _normalizeKeyword(line);
       if (_containsAny(lower, ['npwp', 'npp', 'npw'])) continue;
 
-      // 16-06-2026 20:06:12 / Igl. 16-06-2026 20:06:12
       final dmyDash = RegExp(
         r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?)',
       ).firstMatch(line);
       if (dmyDash != null) {
-        return _formatDateTime(
-          dmyDash.group(3)!,
-          dmyDash.group(2)!,
-          dmyDash.group(1)!,
-          dmyDash.group(4)!,
-        );
+        return _formatDateTime(dmyDash.group(3)!, dmyDash.group(2)!, dmyDash.group(1)!, dmyDash.group(4)!);
       }
 
       final dmyDot = RegExp(
         r'\b(\d{1,2})[.](\d{1,2})[.](\d{2,4})[-\s]+(\d{1,2}:\d{2}(?::\d{2})?)',
       ).firstMatch(line);
       if (dmyDot != null) {
-        return _formatDateTime(
-          dmyDot.group(3)!,
-          dmyDot.group(2)!,
-          dmyDot.group(1)!,
-          dmyDot.group(4)!,
-        );
+        return _formatDateTime(dmyDot.group(3)!, dmyDot.group(2)!, dmyDot.group(1)!, dmyDot.group(4)!);
       }
 
-      // 09-Jun-2026 20:08.53
       final dMonY = RegExp(
         r'\b(\d{1,2})[-\s]([A-Za-z]{3,})[-\s](\d{2,4})\s+(\d{1,2}:\d{2}[.:]?\d{0,2})',
         caseSensitive: false,
@@ -336,12 +404,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       if (dMonY != null) {
         final month = _monthToNumber(dMonY.group(2)!);
         if (month != null) {
-          return _formatDateTime(
-            dMonY.group(3)!,
-            month.toString(),
-            dMonY.group(1)!,
-            dMonY.group(4)!.replaceAll('.', ':'),
-          );
+          return _formatDateTime(dMonY.group(3)!, month.toString(), dMonY.group(1)!, dMonY.group(4)!.replaceAll('.', ':'));
         }
       }
 
@@ -349,12 +412,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
         r'\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?',
       ).firstMatch(line);
       if (ymd != null) {
-        return _formatDateTime(
-          ymd.group(1)!,
-          ymd.group(2)!,
-          ymd.group(3)!,
-          ymd.group(4) ?? '00:00',
-        );
+        return _formatDateTime(ymd.group(1)!, ymd.group(2)!, ymd.group(3)!, ymd.group(4) ?? '00:00');
       }
     }
 
@@ -380,30 +438,10 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
   static int? _monthToNumber(String raw) {
     final m = raw.toLowerCase();
     const months = {
-      'jan': 1,
-      'january': 1,
-      'feb': 2,
-      'february': 2,
-      'mar': 3,
-      'march': 3,
-      'apr': 4,
-      'april': 4,
-      'may': 5,
-      'mei': 5,
-      'jun': 6,
-      'june': 6,
-      'jul': 7,
-      'july': 7,
-      'aug': 8,
-      'agu': 8,
-      'agustus': 8,
-      'sep': 9,
-      'sept': 9,
-      'oct': 10,
-      'okt': 10,
-      'nov': 11,
-      'dec': 12,
-      'des': 12,
+      'jan': 1, 'january': 1, 'feb': 2, 'february': 2, 'mar': 3, 'march': 3,
+      'apr': 4, 'april': 4, 'may': 5, 'mei': 5, 'jun': 6, 'june': 6,
+      'jul': 7, 'july': 7, 'aug': 8, 'agu': 8, 'agustus': 8, 'sep': 9,
+      'sept': 9, 'oct': 10, 'okt': 10, 'nov': 11, 'dec': 12, 'des': 12,
     };
     return months[m];
   }
@@ -464,12 +502,11 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     if (lower.contains('sms') && lower.contains('wa')) return true;
     if (lower.contains('terima kasih')) return true;
     if (lower.contains('thank you')) return true;
+    if (RegExp(r'^\d+\s*item\b').hasMatch(lower)) return true;
+    if (lower.contains('jumlah')) return true;
+
     return false;
   }
-
-  // =========================================================
-  // ITEM PARSING
-  // =========================================================
 
   static List<Map<String, dynamic>> _parseItemsFromZone(
       List<String> lines,
@@ -498,8 +535,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
         continue;
       }
 
-      // Kalau ada pendingName, line angka/barcode/detail tetap harus diberi kesempatan
-      // untuk menjadi detail item. Jadi filter non-item hanya dipakai ketika tidak ada pending.
       if (_isDefinitelyNotItemLine(line) && pendingName == null) {
         pendingName = null;
         pendingCode = null;
@@ -563,7 +598,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
 
       final parsedItem = _parseMinimarketItemLine(line);
       if (parsedItem != null) {
-
         if (pendingName != null && pendingName.isNotEmpty) {
           final mergedName = _toTitleCase(
             _normalizeProductNameSmart(_cleanName("$pendingName ${parsedItem['name']}")),
@@ -627,10 +661,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     final tokens = clean.split(' ').where((e) => e.trim().isNotEmpty).toList();
     if (tokens.length < 2) return null;
 
-    // Pattern 1: nama qty unit total
-    // GO_DA COFF.DOL E 200 1 4300 4,300
-    // ID4 KTG PLSTK IW BSR 1 500 500
-    // NUTRIJEL PHD.STRW.15 2 6600 13,200
     if (tokens.length >= 4) {
       final qtyToken = tokens[tokens.length - 3];
       final unitToken = tokens[tokens.length - 2];
@@ -648,17 +678,10 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
           _isValidItemPrice(lineTotal) &&
           (qty * unitPrice - lineTotal).abs() <= 1000) {
         final rawName = tokens.sublist(0, tokens.length - 3).join(' ');
-        return _buildItem(
-          name: rawName,
-          quantity: qty,
-          unitPrice: unitPrice,
-          lineTotal: lineTotal,
-        );
+        return _buildItem(name: rawName, quantity: qty, unitPrice: unitPrice, lineTotal: lineTotal);
       }
     }
 
-    // Pattern 2: nama qty total
-    // INDOMIE GPRKOSG 1 3,900
     if (tokens.length >= 3) {
       final qtyToken = tokens[tokens.length - 2];
       final totalToken = tokens[tokens.length - 1];
@@ -666,23 +689,13 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       final qty = _parsePureInt(qtyToken);
       final lineTotal = _parseMoneyToken(totalToken);
 
-      if (qty != null &&
-          _isValidQty(qty) &&
-          lineTotal != null &&
-          _isValidItemPrice(lineTotal)) {
+      if (qty != null && _isValidQty(qty) && lineTotal != null && _isValidItemPrice(lineTotal)) {
         final rawName = tokens.sublist(0, tokens.length - 2).join(' ');
         final unitPrice = qty > 1 ? (lineTotal / qty).round() : lineTotal;
-        return _buildItem(
-          name: rawName,
-          quantity: qty,
-          unitPrice: unitPrice,
-          lineTotal: lineTotal,
-        );
+        return _buildItem(name: rawName, quantity: qty, unitPrice: unitPrice, lineTotal: lineTotal);
       }
     }
 
-    // Pattern 3: compact qty+unit di satu token.
-    // KNZLER SNGL.ES KJU 65 18700 8,700 => 1 x 8700.
     if (tokens.length >= 3) {
       final compactToken = _digitsOnly(tokens[tokens.length - 2]);
       final totalToken = tokens[tokens.length - 1];
@@ -697,18 +710,11 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
             _isValidItemPrice(unitPrice) &&
             (qty * unitPrice - lineTotal).abs() <= 1000) {
           final rawName = tokens.sublist(0, tokens.length - 2).join(' ');
-          return _buildItem(
-            name: rawName,
-            quantity: qty,
-            unitPrice: unitPrice,
-            lineTotal: lineTotal,
-          );
+          return _buildItem(name: rawName, quantity: qty, unitPrice: unitPrice, lineTotal: lineTotal);
         }
       }
     }
 
-    // Pattern 4: nama + harga pecah di akhir.
-    // TISSU MONTISS SOFTPACK 200'S BIG1 12 500 => 12.500
     if (tokens.length >= 3) {
       final a = _digitsOnly(tokens[tokens.length - 2]);
       final b = _digitsOnly(tokens[tokens.length - 1]);
@@ -721,30 +727,17 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
         if (price != null && _isValidItemPrice(price)) {
           final rawName = tokens.sublist(0, tokens.length - 2).join(' ');
           if (_looksLikeLooseProductName(rawName)) {
-            return _buildItem(
-              name: rawName,
-              quantity: 1,
-              unitPrice: price,
-              lineTotal: price,
-            );
+            return _buildItem(name: rawName, quantity: 1, unitPrice: price, lineTotal: price);
           }
         }
       }
     }
 
-    // Pattern 5: nama + harga satu baris.
-    // MAKARIZO HE SHP ROYAL JELLY 10ML 12'S 11,000
-    // CHICKEN&TUNA 500GR 26,000
     final lastPrice = _parseMoneyToken(tokens.last);
     if (lastPrice != null && _isValidItemPrice(lastPrice)) {
       final rawName = tokens.sublist(0, tokens.length - 1).join(' ');
       if (_looksLikeLooseProductName(rawName)) {
-        return _buildItem(
-          name: rawName,
-          quantity: 1,
-          unitPrice: lastPrice,
-          lineTotal: lastPrice,
-        );
+        return _buildItem(name: rawName, quantity: 1, unitPrice: lastPrice, lineTotal: lastPrice);
       }
     }
 
@@ -753,9 +746,46 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
 
   static Map<String, dynamic>? _parsePlainQtyUnitTotalDetailLine(String line) {
     final clean = _normalizeText(line);
+
+    // Pattern: "1 X 14.200 14.200" / "1X 9.800 9.800" / "i X 5.000 5.000"
+    final qtyXMatch = RegExp(
+      r'^([iIlL]|\d{1,2})\s*[xX]\s*([\d.,]+)\s+([\d.,]+)$',
+    ).firstMatch(clean);
+
+    if (qtyXMatch != null) {
+      final qtyRaw = qtyXMatch.group(1)!;
+      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw)
+          ? 1
+          : (int.tryParse(qtyRaw) ?? 1);
+      final unitPrice = _parseMoneyFromLine(qtyXMatch.group(2)!);
+      final lineTotal = _parseMoneyFromLine(qtyXMatch.group(3)!);
+      if (unitPrice != null &&
+          lineTotal != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice) &&
+          _isValidItemPrice(lineTotal)) {
+        return {'quantity': qty, 'unit_price': unitPrice, 'line_total': lineTotal};
+      }
+    }
+
+    // Pattern tanpa total terpisah: "1 X 14.200" -> total = qty * harga
+    final qtyXNoTotal = RegExp(
+      r'^([iIlL]|\d{1,2})\s*[xX]\s*([\d.,]+)$',
+    ).firstMatch(clean);
+    if (qtyXNoTotal != null) {
+      final qtyRaw = qtyXNoTotal.group(1)!;
+      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw)
+          ? 1
+          : (int.tryParse(qtyRaw) ?? 1);
+      final unitPrice = _parseMoneyFromLine(qtyXNoTotal.group(2)!);
+      if (unitPrice != null && _isValidQty(qty) && _isValidItemPrice(unitPrice)) {
+        return {'quantity': qty, 'unit_price': unitPrice, 'line_total': qty * unitPrice};
+      }
+    }
+
+    // --- kode lama tetap dipertahankan sebagai fallback ---
     final tokens = clean.split(' ').where((e) => e.trim().isNotEmpty).toList();
 
-    // 1 4,500 4,500
     if (tokens.length == 3) {
       final qty = _parsePureInt(tokens[0]);
       final unitPrice = _parseMoneyToken(tokens[1]);
@@ -771,14 +801,10 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       }
     }
 
-    // 1 200 => qty 1 harga 200, bukan 1200.
     if (tokens.length == 2) {
       final qty = _parsePureInt(tokens[0]);
       final unitPrice = _parseMoneyToken(tokens[1]);
-      if (qty != null &&
-          unitPrice != null &&
-          _isValidQty(qty) &&
-          _isValidItemPrice(unitPrice)) {
+      if (qty != null && unitPrice != null && _isValidQty(qty) && _isValidItemPrice(unitPrice)) {
         return {'quantity': qty, 'unit_price': unitPrice, 'line_total': qty * unitPrice};
       }
     }
@@ -799,12 +825,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       final qty = int.tryParse(withBarcode.group(2) ?? '1') ?? 1;
       final unitPrice = _parseMoneyFromLine(withBarcode.group(3) ?? '');
       if (unitPrice != null && _isValidQty(qty) && _isValidItemPrice(unitPrice)) {
-        return {
-          'barcode': barcode,
-          'quantity': qty,
-          'unit_price': unitPrice,
-          'line_total': qty * unitPrice,
-        };
+        return {'barcode': barcode, 'quantity': qty, 'unit_price': unitPrice, 'line_total': qty * unitPrice};
       }
     }
 
@@ -817,12 +838,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       final qty = int.tryParse(noBarcode.group(1) ?? '1') ?? 1;
       final unitPrice = _parseMoneyFromLine(noBarcode.group(2) ?? '');
       if (unitPrice != null && _isValidQty(qty) && _isValidItemPrice(unitPrice)) {
-        return {
-          'barcode': null,
-          'quantity': qty,
-          'unit_price': unitPrice,
-          'line_total': qty * unitPrice,
-        };
+        return {'barcode': null, 'quantity': qty, 'unit_price': unitPrice, 'line_total': qty * unitPrice};
       }
     }
 
@@ -837,6 +853,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     String? code,
   }) {
     var cleanName = _cleanName(name);
+    cleanName = _fixEmbeddedDigitTypos(cleanName);
     cleanName = _normalizeProductNameSmart(cleanName);
     cleanName = _toTitleCase(cleanName);
 
@@ -854,10 +871,24 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
       if (code != null && code.trim().isNotEmpty) 'code': code,
     };
   }
+  static String _fixEmbeddedDigitTypos(String text) {
+    const map = {'0': 'o', '1': 'i', '4': 'a', '3': 'e', '5': 's'};
+    final chars = text.split('');
 
-  // =========================================================
-  // SUMMARY / DISCOUNT
-  // =========================================================
+    for (int i = 0; i < chars.length; i++) {
+      final c = chars[i];
+      if (!map.containsKey(c)) continue;
+
+      final prevIsLetter = i > 0 && RegExp(r'[a-zA-Z]').hasMatch(chars[i - 1]);
+      final nextIsLetter = i < chars.length - 1 && RegExp(r'[a-zA-Z]').hasMatch(chars[i + 1]);
+
+      if (prevIsLetter && nextIsLetter) {
+        chars[i] = map[c]!;
+      }
+    }
+
+    return chars.join();
+  }
 
   static Map<String, int?> _parseSummaryFromBottom(List<String> lines) {
     int? subtotal;
@@ -991,10 +1022,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     return total > 0 ? total : null;
   }
 
-  // =========================================================
-  // AMBIGUOUS ITEMS
-  // =========================================================
-
   static List<Map<String, dynamic>> _collectAmbiguousItemsFromZone(
       List<String> lines,
       int itemStart,
@@ -1062,10 +1089,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     };
   }
 
-  // =========================================================
-  // VALIDATION / DUPLICATES
-  // =========================================================
-
   static List<Map<String, dynamic>> _mergeDuplicateItems(List<Map<String, dynamic>> items) {
     final result = <Map<String, dynamic>>[];
 
@@ -1121,7 +1144,7 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     final warnings = <String>[];
 
     if (ambiguousItems.isNotEmpty) {
-      warnings.add('${ambiguousItems.length} ambiguous item(s) need user confirmation before saving.');
+      warnings.add('${ambiguousItems.length} item perlu konfirmasi sebelum disimpan.');
     }
 
     if (total != null && total > 0 && items.isNotEmpty) {
@@ -1139,10 +1162,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     return warnings;
   }
 
-  // =========================================================
-  // FILTERS
-  // =========================================================
-
   static bool _isDefinitelyNotItemLine(String line) {
     final lower = _normalizeKeyword(line);
 
@@ -1150,40 +1169,14 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     if (_isFooterStart(lower)) return true;
     if (_isTotalLabel(lower)) return true;
     if (_containsAny(lower, [
-      'alamat',
-      'jalan ',
-      'jln ',
-      'jl ',
-      'rt.',
-      'rw.',
-      'blok',
-      'kec:',
-      'kec.',
-      'kota ',
-      'batam',
-      'npwp',
-      'npw:',
-      'npp',
-      'pt.',
-      'kasir',
-      'receipt',
-      'telp',
-      'sms',
-      'wa:',
-      'kritik',
-      'saran',
-      'layanan',
-      'konsumen',
-      'email',
-      '@',
-      'bon ',
-      'tgl ',
-      'igl.',
+      'alamat', 'jalan ', 'jln ', 'jl ', 'rt.', 'rw.', 'blok', 'kec:',
+      'kec.', 'kota ', 'batam', 'npwp', 'npw:', 'npp', 'pt.', 'kasir',
+      'receipt', 'telp', 'sms', 'wa:', 'kritik', 'saran', 'layanan',
+      'konsumen', 'email', '@', 'bon ', 'tgl ', 'igl.',
     ])) {
       return true;
     }
 
-    // Baris nomor pajak/kode panjang tanpa konteks produk.
     if (!RegExp(r'[a-zA-Z]').hasMatch(line)) return true;
 
     return false;
@@ -1218,10 +1211,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     return true;
   }
 
-  // =========================================================
-  // MONEY / NUMBER HELPERS
-  // =========================================================
-
   static int? _parsePureInt(String token) {
     final raw = token.trim();
     if (RegExp(r'[a-zA-Z]').hasMatch(raw)) return null;
@@ -1244,7 +1233,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     var raw = text.trim();
     if (raw.isEmpty) return null;
 
-    // Ambil angka uang paling kanan.
     final matches = RegExp(r'(\d{1,3}(?:[.,]\s?\d{2,3})+|\d{3,7}|,\s?\d{3})')
         .allMatches(raw)
         .toList();
@@ -1253,14 +1241,11 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     var candidate = matches.last.group(0) ?? '';
     candidate = candidate.trim();
 
-    // OCR Alfamart: 10, 00 harusnya 10,000.
     final brokenTwoDigits = RegExp(r'^(\d{2})\s*,\s*(\d{2})$').firstMatch(candidate);
     if (brokenTwoDigits != null) {
       return int.tryParse('${brokenTwoDigits.group(1)}${brokenTwoDigits.group(2)}0');
     }
 
-    // OCR Alfamart: ,700 kemungkinan total 7,700, tapi angka depannya hilang.
-    // Jangan paksa di sini. Nanti total diperbaiki dari sum item - diskon.
     final digits = _digitsOnly(candidate);
     if (digits.isEmpty) return null;
     return int.tryParse(digits);
@@ -1285,10 +1270,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     return value >= 100 && value <= 2000000;
   }
 
-  // =========================================================
-  // NAME / CATEGORY
-  // =========================================================
-
   static Map<String, String?> _extractCodeAndName(String line) {
     final clean = _normalizeText(line);
     final match = RegExp(r'^(\d{6,})\s+(.+)$').firstMatch(clean);
@@ -1306,7 +1287,6 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     name = name.replaceAll(RegExp(r"[^a-zA-Z0-9\s_./&\-']"), ' ');
     name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-    // Buang token harga di belakang jika masih tertinggal.
     name = name.replaceAll(RegExp(r'\s+\d{1,3}([.,]\d{3})+$'), '').trim();
 
     return name;
@@ -1315,10 +1295,13 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
   static String _normalizeProductNameSmart(String rawName) {
     var lower = rawName.toLowerCase();
 
-    lower = lower
-        .replaceAll('_', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    lower = lower.replaceAll('_', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    lower = lower.replaceAll(RegExp(r'\bind0mie\b'), 'indomie');
+    lower = lower.replaceAll(RegExp(r'\baqu4\b'), 'aqua');
+    lower = lower.replaceAll(RegExp(r'\bmlnute\b'), 'minute');
+    lower = lower.replaceAll(RegExp(r'\bmlneral\b'), 'mineral');
+    lower = lower.replaceAll(RegExp(r'\bmineoral\b'), 'mineral');
 
     lower = lower.replaceAll(RegExp(r'\bin\s*dom\s*ie\b'), 'indomie');
     lower = lower.replaceAll(RegExp(r'\bindom\s*ie\b'), 'indomie');
@@ -1371,14 +1354,14 @@ static Future<Map<String, dynamic>?> scanReceiptFromGallery() async {
     return _normalizeKeyword(text).replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
-
   static bool _containsAny(String text, List<String> keywords) {
     for (final keyword in keywords) {
       if (text.contains(keyword)) return true;
     }
     return false;
   }
+
   static void dispose() {
-  _recognizer.close();
-}
+    _recognizer.close();
+  }
 }
