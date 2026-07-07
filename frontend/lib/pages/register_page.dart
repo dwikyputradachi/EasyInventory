@@ -92,12 +92,19 @@ class _RegisterPageState extends State<RegisterPage> {
     if (res["status"] == "success" ||
         res["success"] == true) {
 
+      // KUNCI PERBAIKAN: Ambil nilai otp_testing dari dalam key "data" response API kamu
+      String? testingOtp;
+      if (res["data"] != null && res["data"]["otp_testing"] != null) {
+        testingOtp = res["data"]["otp_testing"].toString();
+      }
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => OTPVerificationPage(
             email: email,
             purpose: "register",
+            autoFillOtp: testingOtp, // <-- Sekarang nilai OTP dioper ke sini!
           ),
         ),
       );

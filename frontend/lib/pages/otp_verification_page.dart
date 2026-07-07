@@ -8,11 +8,13 @@ import 'login_page.dart';
 class OTPVerificationPage extends StatefulWidget {
   final String email;
   final String purpose;
+  final String? autoFillOtp; // <-- Tambahkan parameter opsional ini
 
   const OTPVerificationPage({
     super.key,
     required this.email,
     required this.purpose,
+    this.autoFillOtp, // <-- Daftarkan di constructor
   });
 
   @override
@@ -28,9 +30,51 @@ class _OTPVerificationPageState
   bool _isLoading = false;
 
   @override
+  void initState() {
+    super.initState();
+    // 1. Jika ada OTP yang dioper, langsung masukkan ke controller
+    if (widget.autoFillOtp != null) {
+      _otpController.text = widget.autoFillOtp!;
+      
+      // 2. Tampilkan alert pemberitahuan setelah UI selesai di-render
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showBetaTestingAlert();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _otpController.dispose();
     super.dispose();
+  }
+
+  // Fungsi untuk memicu dialog Alert khusus Beta Testing
+  void _showBetaTestingAlert() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // User wajib klik OK
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.gavel, color: Colors.orange),
+              SizedBox(width: 10),
+              Text("Beta Testing Mode"),
+            ],
+          ),
+          content: Text(
+            "Halo! Karena sistem dalam tahap pengujian (Beta), kode verifikasi OTP Anda telah diisi secara otomatis (${widget.autoFillOtp}) untuk mempermudah proses testing.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text("OK, Mengerti"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showMessage(
@@ -78,25 +122,25 @@ class _OTPVerificationPageState
 
       if (widget.purpose == "register") {
 
-       ScaffoldMessenger.of(context).showSnackBar(
-  const SnackBar(
-    content: Text("Akun berhasil didaftarkan. Silakan login."),
-    duration: Duration(seconds: 2),
-  ),
-);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Akun berhasil didaftarkan. Silakan login."),
+            duration: Duration(seconds: 2),
+          ),
+        );
 
-Future.delayed(
-  const Duration(seconds: 2),
-  () {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const LoginPage(),
-      ),
-      (route) => false,
-    );
-  },
-);
+        Future.delayed(
+          const Duration(seconds: 2),
+          () {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LoginPage(),
+              ),
+              (route) => false,
+            );
+          },
+        );
 
       } else {
 

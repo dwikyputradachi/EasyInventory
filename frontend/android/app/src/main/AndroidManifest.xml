@@ -2,7 +2,15 @@
     <application
         android:label="easy_inventory"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon">
+
+        <!-- [BARU] Supaya model OCR ML Kit otomatis ter-download saat install
+             lewat Play Services, bukan menunggu didownload saat pertama kali
+             dipakai (yang bisa gagal kalau device sempat offline). -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

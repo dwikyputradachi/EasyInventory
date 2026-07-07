@@ -10,7 +10,7 @@ class OcrService {
     script: TextRecognitionScript.latin,
   );
 
-  static const String _version = 'STABLE-V12-VALIDATOR-PIPELINE';
+  static const String _version = 'STABLE-V15-EU-US-NUMBER-FORMAT-LEADING-QTY';
 
   static Future<List<Map<String, dynamic>>?> scanFromCamera() async {
     final receipt = await scanReceiptFromCamera();
@@ -35,6 +35,7 @@ class OcrService {
     if (picked == null) return null;
     return _processImage(File(picked.path));
   }
+
   static Future<File?> pickImageFromCamera() async {
     final picked = await _picker.pickImage(
       source: ImageSource.camera,
@@ -44,6 +45,7 @@ class OcrService {
     );
     return picked != null ? File(picked.path) : null;
   }
+
   static Future<File?> pickImageFromGallery() async {
     final picked = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -53,6 +55,7 @@ class OcrService {
     );
     return picked != null ? File(picked.path) : null;
   }
+
   static Future<Map<String, dynamic>?> scanReceiptFromFile(File file) async {
     return _processImage(file);
   }
@@ -307,11 +310,32 @@ class OcrService {
   }
 
   static String _normalizeText(String text) {
-    return text
+    var t = text
         .replaceAll('\u00a0', ' ')
         .replaceAll('|', 'I')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+
+    // Rapikan simbol qty tanpa spasi: "2x5.000" -> "2 x 5.000",
+    // "1X14.200" -> "1 X 14.200" (hanya antar digit, supaya kata biasa
+    // yang mengandung huruf x seperti "next"/"box" tidak ikut kena).
+    t = t.replaceAllMapped(
+      RegExp(r'(\d)\s*([xX])\s*(\d)'),
+      (m) => '${m[1]} ${m[2]} ${m[3]}',
+    );
+
+    // [BARU] Simbol "@" dirapikan kapan pun diikuti angka, walau sebelumnya
+    // huruf (mis. "KENYANG@30,000" atau "KENYANG @30,000" dari struk
+    // resto/kafe). Aman untuk email (kontak@indomaret.co.id) karena syaratnya
+    // karakter SETELAH @ harus angka.
+    t = t.replaceAllMapped(RegExp(r'\s*@\s*(?=\d)'), (m) => ' @ ');
+
+    // [BARU] Buang tanda "=" yang nempel ke angka hasil perkalian qty x
+    // harga, mis. "1 x 2000= 2.000,00" -> "1 x 2000 2.000,00" (umum di
+    // struk kasir toko kecil/warung).
+    t = t.replaceAllMapped(RegExp(r'(\d)\s*=\s*'), (m) => '${m[1]} ');
+
+    return t;
   }
 
   static String _normalizeKeyword(String text) {
@@ -326,6 +350,7 @@ class OcrService {
     result = _correctCommonTypos(result);
     return result;
   }
+
   static String _correctCommonTypos(String lower) {
     var text = lower;
     text = text.replaceAll('tota1', 'total');
@@ -414,6 +439,18 @@ class OcrService {
       if (ymd != null) {
         return _formatDateTime(ymd.group(1)!, ymd.group(2)!, ymd.group(3)!, ymd.group(4) ?? '00:00');
       }
+
+      // [BARU] Format "Aug 10, 2025 5:47:18 PM" (POS internasional/resto modern)
+      final monDY = RegExp(
+        r'\b([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)',
+        caseSensitive: false,
+      ).firstMatch(line);
+      if (monDY != null) {
+        final month = _monthToNumber(monDY.group(1)!);
+        if (month != null) {
+          return _formatDateTime(monDY.group(3)!, month.toString(), monDY.group(2)!, monDY.group(4)!);
+        }
+      }
     }
 
     return null;
@@ -440,8 +477,9 @@ class OcrService {
     const months = {
       'jan': 1, 'january': 1, 'feb': 2, 'february': 2, 'mar': 3, 'march': 3,
       'apr': 4, 'april': 4, 'may': 5, 'mei': 5, 'jun': 6, 'june': 6,
-      'jul': 7, 'july': 7, 'aug': 8, 'agu': 8, 'agustus': 8, 'sep': 9,
-      'sept': 9, 'oct': 10, 'okt': 10, 'nov': 11, 'dec': 12, 'des': 12,
+      'jul': 7, 'july': 7, 'aug': 8, 'agu': 8, 'agustus': 8, 'august': 8, 'sep': 9,
+      'sept': 9, 'september': 9, 'oct': 10, 'okt': 10, 'october': 10, 'nov': 11,
+      'november': 11, 'dec': 12, 'des': 12, 'december': 12,
     };
     return months[m];
   }
@@ -493,15 +531,31 @@ class OcrService {
   static bool _isFooterStart(String lower) {
     if (lower.contains('total iten') || lower.contains('total item')) return true;
     if (lower.contains('total belanja')) return true;
+    if (lower.contains('grand total')) return true;
+    if (lower.contains('total bayar')) return true;
+    if (lower.contains('total tagihan')) return true;
+    if (lower.contains('total transaksi')) return true;
+    if (lower.contains('jumlah total')) return true;
     if (lower.startsWith('total ') || lower == 'total :' || lower == 'total') return true;
     if (lower.contains('harga jual')) return true;
+
+    // [BARU] Subtotal & label pembayaran umum
+    if (lower.contains('sub total') || lower.contains('subtotal')) return true;
+    if (lower.startsWith('pembayaran')) return true;
+
     if (lower.startsWith('tunai') || lower.startsWith('cash')) return true;
+    if (lower.startsWith('debit') || lower.startsWith('kartu')) return true;
+    if (lower.startsWith('qris') || lower.contains('non tunai')) return true;
     if (lower.startsWith('kembali') || lower.startsWith('kenbal') || lower.startsWith('kembal')) return true;
+    // [BARU] Istilah bahasa Inggris (POS modern/resto)
+    if (lower.startsWith('change')) return true;
+
     if (lower.contains('layanan konsumen')) return true;
     if (lower.contains('kritik') || lower.contains('saran')) return true;
     if (lower.contains('sms') && lower.contains('wa')) return true;
     if (lower.contains('terima kasih')) return true;
     if (lower.contains('thank you')) return true;
+
     if (RegExp(r'^\d+\s*item\b').hasMatch(lower)) return true;
     if (lower.contains('jumlah')) return true;
 
@@ -647,6 +701,128 @@ class OcrService {
     return items;
   }
 
+  // Parser untuk baris yang menyatukan NAMA + qty + harga (+ total) dalam
+  // SATU baris dengan gaya "nama dulu, qty di belakang", mis:
+  //   "TELUR PACK 10'S 1 X 14.200 14.200"
+  //   "Nasi Goreng 2 @ 15.000 30.000"
+  static Map<String, dynamic>? _parseInlineNameQtyPriceLine(String line) {
+    final clean = _normalizeText(line);
+    if (clean.length < 5) return null;
+    if (_isDefinitelyNotItemLine(clean)) return null;
+    if (_isDiscountLine(_normalizeKeyword(clean))) return null;
+
+    final withTotal = RegExp(
+      r'^(.{3,}?)\s+([iIlL]|\d{1,3})\s*[xX@]\s*([\d.,]+)\s+([\d.,]+)$',
+    ).firstMatch(clean);
+
+    if (withTotal != null) {
+      final name = withTotal.group(1)!.trim();
+      final qtyRaw = withTotal.group(2)!;
+      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw) ? 1 : (int.tryParse(qtyRaw) ?? 1);
+      final unitPrice = _parseMoneyFromLine(withTotal.group(3)!);
+      final lineTotal = _parseMoneyFromLine(withTotal.group(4)!);
+
+      if (unitPrice != null &&
+          lineTotal != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice) &&
+          _isValidItemPrice(lineTotal) &&
+          _looksLikeLooseProductName(name) &&
+          (qty * unitPrice - lineTotal).abs() <= 1500) {
+        return _buildItem(name: name, quantity: qty, unitPrice: unitPrice, lineTotal: lineTotal);
+      }
+    }
+
+    final withoutTotal = RegExp(
+      r'^(.{3,}?)\s+([iIlL]|\d{1,3})\s*[xX@]\s*([\d.,]+)$',
+    ).firstMatch(clean);
+
+    if (withoutTotal != null) {
+      final name = withoutTotal.group(1)!.trim();
+      final qtyRaw = withoutTotal.group(2)!;
+      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw) ? 1 : (int.tryParse(qtyRaw) ?? 1);
+      final unitPrice = _parseMoneyFromLine(withoutTotal.group(3)!);
+
+      if (unitPrice != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice) &&
+          _looksLikeLooseProductName(name)) {
+        return _buildItem(name: name, quantity: qty, unitPrice: unitPrice, lineTotal: qty * unitPrice);
+      }
+    }
+
+    return null;
+  }
+
+  // [BARU] Parser untuk gaya "qty DULU, baru nama, baru harga" — umum di
+  // struk kafe/bakery/resto, mis:
+  //   "1 Bread Butter Pudding 11,500"        (tanpa simbol sama sekali)
+  //   "1 Paket Kenyang @ 30,000 30,000"       (pakai simbol @)
+  //   "2 Es Teh @ 5,000"                      (tanpa kolom total terpisah)
+  static Map<String, dynamic>? _parseLeadingQtyItemLine(String line) {
+    final clean = _normalizeText(line);
+    if (clean.length < 5) return null;
+    if (_isDefinitelyNotItemLine(clean)) return null;
+    if (_isDiscountLine(_normalizeKeyword(clean))) return null;
+
+    // <qty> <nama> [@/x] <hargaSatuan> <totalBaris>
+    final withSymbolAndTotal = RegExp(
+      r'^(\d{1,2})\s+(.{2,}?)\s*[@xX]\s*([\d.,]+)\s+([\d.,]+)$',
+    ).firstMatch(clean);
+    if (withSymbolAndTotal != null) {
+      final qty = int.tryParse(withSymbolAndTotal.group(1)!) ?? 1;
+      final name = withSymbolAndTotal.group(2)!.trim();
+      final unitPrice = _parseMoneyFromLine(withSymbolAndTotal.group(3)!);
+      final lineTotal = _parseMoneyFromLine(withSymbolAndTotal.group(4)!);
+      if (unitPrice != null &&
+          lineTotal != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice) &&
+          _isValidItemPrice(lineTotal) &&
+          _looksLikeLooseProductName(name)) {
+        return _buildItem(name: name, quantity: qty, unitPrice: unitPrice, lineTotal: lineTotal);
+      }
+    }
+
+    // <qty> <nama> [@/x] <hargaSatuan>  (tanpa total terpisah)
+    final withSymbolNoTotal = RegExp(
+      r'^(\d{1,2})\s+(.{2,}?)\s*[@xX]\s*([\d.,]+)$',
+    ).firstMatch(clean);
+    if (withSymbolNoTotal != null) {
+      final qty = int.tryParse(withSymbolNoTotal.group(1)!) ?? 1;
+      final name = withSymbolNoTotal.group(2)!.trim();
+      final unitPrice = _parseMoneyFromLine(withSymbolNoTotal.group(3)!);
+      if (unitPrice != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice) &&
+          _looksLikeLooseProductName(name)) {
+        return _buildItem(name: name, quantity: qty, unitPrice: unitPrice, lineTotal: qty * unitPrice);
+      }
+    }
+
+    // <qty> <nama> <harga>  (tanpa simbol sama sekali, gaya kafe/bakery)
+    // Karena tidak ada penanda simbol, pola ini paling berisiko salah
+    // tangkap, jadi dicoba PALING TERAKHIR dan mensyaratkan nama diawali
+    // huruf serta harga persis di akhir baris.
+    final noSymbol = RegExp(
+      r"^(\d{1,2})\s+([A-Za-z][A-Za-z0-9\s\-'&./]{2,}?)\s+([\d.,]+)$",
+    ).firstMatch(clean);
+    if (noSymbol != null) {
+      final qty = int.tryParse(noSymbol.group(1)!) ?? 1;
+      final name = noSymbol.group(2)!.trim();
+      final price = _parseMoneyFromLine(noSymbol.group(3)!);
+      if (price != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(price) &&
+          _looksLikeLooseProductName(name)) {
+        final unitPrice = qty > 1 ? (price / qty).round() : price;
+        return _buildItem(name: name, quantity: qty, unitPrice: unitPrice, lineTotal: price);
+      }
+    }
+
+    return null;
+  }
+
   static Map<String, dynamic>? _parseMinimarketItemLine(String line) {
     final clean = _normalizeText(line);
     final lower = _normalizeKeyword(clean);
@@ -657,6 +833,15 @@ class OcrService {
     if (_isDiscountLine(lower)) return null;
     if (_isIgnoredMinimarketCharge(lower)) return null;
     if (_parseBarcodeDetailLine(clean) != null) return null;
+
+    // Coba dulu pola gabungan nama+qty+harga dalam satu baris (nama di
+    // depan, qty di belakang sebelum simbol).
+    final inline = _parseInlineNameQtyPriceLine(clean);
+    if (inline != null) return inline;
+
+    // [BARU] Coba pola qty DULU baru nama (gaya kafe/bakery/resto).
+    final leadingQty = _parseLeadingQtyItemLine(clean);
+    if (leadingQty != null) return leadingQty;
 
     final tokens = clean.split(' ').where((e) => e.trim().isNotEmpty).toList();
     if (tokens.length < 2) return null;
@@ -747,16 +932,13 @@ class OcrService {
   static Map<String, dynamic>? _parsePlainQtyUnitTotalDetailLine(String line) {
     final clean = _normalizeText(line);
 
-    // Pattern: "1 X 14.200 14.200" / "1X 9.800 9.800" / "i X 5.000 5.000"
     final qtyXMatch = RegExp(
-      r'^([iIlL]|\d{1,2})\s*[xX]\s*([\d.,]+)\s+([\d.,]+)$',
+      r'^([iIlL]|\d{1,2})\s*[xX@]\s*([\d.,]+)\s+([\d.,]+)$',
     ).firstMatch(clean);
 
     if (qtyXMatch != null) {
       final qtyRaw = qtyXMatch.group(1)!;
-      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw)
-          ? 1
-          : (int.tryParse(qtyRaw) ?? 1);
+      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw) ? 1 : (int.tryParse(qtyRaw) ?? 1);
       final unitPrice = _parseMoneyFromLine(qtyXMatch.group(2)!);
       final lineTotal = _parseMoneyFromLine(qtyXMatch.group(3)!);
       if (unitPrice != null &&
@@ -768,22 +950,38 @@ class OcrService {
       }
     }
 
-    // Pattern tanpa total terpisah: "1 X 14.200" -> total = qty * harga
     final qtyXNoTotal = RegExp(
-      r'^([iIlL]|\d{1,2})\s*[xX]\s*([\d.,]+)$',
+      r'^([iIlL]|\d{1,2})\s*[xX@]\s*([\d.,]+)$',
     ).firstMatch(clean);
     if (qtyXNoTotal != null) {
       final qtyRaw = qtyXNoTotal.group(1)!;
-      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw)
-          ? 1
-          : (int.tryParse(qtyRaw) ?? 1);
+      final qty = RegExp(r'^[iIlL]$').hasMatch(qtyRaw) ? 1 : (int.tryParse(qtyRaw) ?? 1);
       final unitPrice = _parseMoneyFromLine(qtyXNoTotal.group(2)!);
       if (unitPrice != null && _isValidQty(qty) && _isValidItemPrice(unitPrice)) {
         return {'quantity': qty, 'unit_price': unitPrice, 'line_total': qty * unitPrice};
       }
     }
 
-    // --- kode lama tetap dipertahankan sebagai fallback ---
+    // [BARU] Format faktur/invoice grosir dengan qty desimal + satuan,
+    // mis. "12.0 BOS x 17,000.00 204,000.00" atau "2.0 DUS @ 32,500.00".
+    final wholesaleUnitMatch = RegExp(
+      r'^(\d+(?:[.,]\d+)?)\s*(?:BOS|DUS|LSN|LUSIN|KRT|KRTN|KTN|ZAK|ROL|RIM|PCS|PC|BKS|BTL|KG|GR|BOX|PACK|PCK|IKT|KLG)?\s*[xX@]\s*([\d.,]+)\s+([\d.,]+)$',
+      caseSensitive: false,
+    ).firstMatch(clean);
+    if (wholesaleUnitMatch != null) {
+      final qtyRaw = wholesaleUnitMatch.group(1)!.replaceAll(',', '.');
+      final qty = (double.tryParse(qtyRaw) ?? 1).round();
+      final unitPrice = _parseMoneyFromLine(wholesaleUnitMatch.group(2)!);
+      final lineTotal = _parseMoneyFromLine(wholesaleUnitMatch.group(3)!);
+      if (unitPrice != null &&
+          lineTotal != null &&
+          _isValidQty(qty) &&
+          _isValidItemPrice(unitPrice) &&
+          _isValidItemPrice(lineTotal)) {
+        return {'quantity': qty, 'unit_price': unitPrice, 'line_total': lineTotal};
+      }
+    }
+
     final tokens = clean.split(' ').where((e) => e.trim().isNotEmpty).toList();
 
     if (tokens.length == 3) {
@@ -816,7 +1014,7 @@ class OcrService {
     final clean = _normalizeText(line);
 
     final withBarcode = RegExp(
-      r'^(\d{6,})\s+(?:(\d{1,3})\s+)?(?:PCS|PC|BKS|BTL|KG|GR|BOX|PACK|PCK|IKT|KLG)\s*[xX]\s*([\d.,\s]+)$',
+      r'^(\d{6,})\s+(?:(\d{1,3})\s+)?(?:PCS|PC|BKS|BTL|KG|GR|BOX|PACK|PCK|IKT|KLG|BOS|DUS|LSN|LUSIN|KRT|KRTN|KTN|ZAK|ROL|RIM)\s*[xX@]\s*([\d.,\s]+)$',
       caseSensitive: false,
     ).firstMatch(clean);
 
@@ -830,7 +1028,7 @@ class OcrService {
     }
 
     final noBarcode = RegExp(
-      r'^(?:(\d{1,3})\s+)?(?:PCS|PC|BKS|BTL|KG|GR|BOX|PACK|PCK|IKT|KLG)\s*[xX]\s*([\d.,\s]+)$',
+      r'^(?:(\d{1,3})\s+)?(?:PCS|PC|BKS|BTL|KG|GR|BOX|PACK|PCK|IKT|KLG|BOS|DUS|LSN|LUSIN|KRT|KRTN|KTN|ZAK|ROL|RIM)\s*[xX@]\s*([\d.,\s]+)$',
       caseSensitive: false,
     ).firstMatch(clean);
 
@@ -871,6 +1069,7 @@ class OcrService {
       if (code != null && code.trim().isNotEmpty) 'code': code,
     };
   }
+
   static String _fixEmbeddedDigitTypos(String text) {
     const map = {'0': 'o', '1': 'i', '4': 'a', '3': 'e', '5': 's'};
     final chars = text.split('');
@@ -889,6 +1088,11 @@ class OcrService {
 
     return chars.join();
   }
+
+  // Batas nilai yang wajar untuk paid/change/total supaya angka OCR yang
+  // ngaco parah (mis. salah baca watermark/background jadi digit sampai
+  // miliaran) tidak ikut merusak ringkasan struk.
+  static const int _kMaxReasonableAmount = 100000000; // 100 juta
 
   static Map<String, int?> _parseSummaryFromBottom(List<String> lines) {
     int? subtotal;
@@ -914,30 +1118,51 @@ class OcrService {
         continue;
       }
 
-      if ((lower.contains('harga jual') || lower.contains('subtotal')) && !lower.contains('item')) {
+      if ((lower.contains('harga jual') || lower.contains('subtotal') || lower.contains('sub total')) &&
+          !lower.contains('item')) {
         subtotal = _valueOnSameOrNext(lines, i) ?? subtotal;
         continue;
       }
 
       if (_isTotalLabel(lower)) {
-        total = _valueOnSameOrNext(lines, i) ?? total;
+        final v = _valueOnSameOrNext(lines, i);
+        if (v != null && v <= _kMaxReasonableAmount) total = v;
         continue;
       }
 
       if (lower.startsWith('tunai') || lower.startsWith('cash')) {
-        paid = _valueOnSameOrNext(lines, i) ?? paid;
+        final v = _valueOnSameOrNext(lines, i);
+        if (v != null && v <= _kMaxReasonableAmount) paid = v;
+        continue;
+      }
+      if (lower.startsWith('debit') ||
+          lower.startsWith('kartu') ||
+          lower.startsWith('qris') ||
+          lower.contains('non tunai') ||
+          lower.startsWith('pembayaran')) {
+        final v = _valueOnSameOrNext(lines, i);
+        if (paid == null && v != null && v <= _kMaxReasonableAmount) paid = v;
         continue;
       }
 
-      if (lower.startsWith('kembali') || lower.startsWith('kenbal') || lower.startsWith('kembal')) {
-        change = _valueOnSameOrNext(lines, i) ?? change;
+      if (lower.startsWith('kembali') || lower.startsWith('kenbal') || lower.startsWith('kembal') || lower.startsWith('change')) {
+        final v = _valueOnSameOrNext(lines, i);
+        if (v != null && v <= _kMaxReasonableAmount) change = v;
         continue;
       }
 
-      if (lower.contains('ppn')) {
-        final ppnMatch = RegExp(r'ppn\s*[=:]?\s*([\d.,\s]+)', caseSensitive: false).firstMatch(line);
-        final value = ppnMatch != null ? _parseMoneyFromLine(ppnMatch.group(1) ?? '') : null;
-        if (value != null) tax = value;
+      if (lower.contains('ppn') || lower.contains('pb1') || lower.contains('tax') || RegExp(r'\bpajak\b').hasMatch(lower)) {
+        final taxMatch = RegExp(r'(?:ppn|pb1|pajak|tax)[a-z\s]*[=:]?\s*([\d.,\s]+)', caseSensitive: false).firstMatch(line);
+        final value = taxMatch != null ? _parseMoneyFromLine(taxMatch.group(1) ?? '') : _valueOnSameOrNext(lines, i);
+        if (value != null && value <= _kMaxReasonableAmount) tax = value;
+        continue;
+      }
+
+      if (lower.contains('service') || lower.contains('svc')) {
+        final svcMatch = RegExp(r'(?:service|svc)[a-z\s]*[=:]?\s*([\d.,\s]+)', caseSensitive: false).firstMatch(line);
+        final value = svcMatch != null ? _parseMoneyFromLine(svcMatch.group(1) ?? '') : _valueOnSameOrNext(lines, i);
+        if (value != null && value <= _kMaxReasonableAmount) serviceCharge = value;
+        continue;
       }
     }
 
@@ -955,7 +1180,14 @@ class OcrService {
   static bool _isTotalLabel(String lower) {
     if (lower.contains('total item') || lower.contains('total iten')) return false;
     if (lower.contains('total disc')) return false;
+    // [BARU] "TOTAL 16.0 BOS" dll adalah ringkasan qty, bukan nominal uang.
+    if (RegExp(r'^total\s+[\d.,]+\s*(bos|pcs|pc|box|dus|lsn|krt|ktn|pak)\b').hasMatch(lower)) return false;
     if (lower.contains('total belanja')) return true;
+    if (lower.contains('grand total')) return true;
+    if (lower.contains('total bayar')) return true;
+    if (lower.contains('total tagihan')) return true;
+    if (lower.contains('total transaksi')) return true;
+    if (lower.contains('jumlah total')) return true;
     if (lower.startsWith('total')) return true;
     return false;
   }
@@ -978,9 +1210,13 @@ class OcrService {
     return lower == 'total belanja' ||
         lower == 'tunai' ||
         lower == 'cash' ||
+        lower == 'debit' ||
+        lower == 'kartu' ||
+        lower == 'qris' ||
         lower == 'kembali' ||
         lower == 'kembalian' ||
         lower == 'kenbal ian' ||
+        lower == 'change' ||
         lower == 'total disc.' ||
         lower == 'total disc';
   }
@@ -1003,12 +1239,18 @@ class OcrService {
     return lower.contains('disc') ||
         lower.contains('diskon') ||
         lower.contains('voucher') ||
-        lower.startsWith('vc ');
+        lower.contains('promo') ||
+        lower.startsWith('vc ') ||
+        lower.startsWith('pwp');
   }
 
   static int? _parseDiscountAmount(String line) {
-    final match = RegExp(r'-\s*([\d.,\s]+)').firstMatch(line);
-    if (match != null) return _parseMoneyFromLine(match.group(1) ?? '');
+    final leadingMinus = RegExp(r'-\s*([\d.,\s]+)').firstMatch(line);
+    if (leadingMinus != null) return _parseMoneyFromLine(leadingMinus.group(1) ?? '');
+
+    final trailingMinus = RegExp(r'([\d.,\s]+)\s*-\s*$').firstMatch(line);
+    if (trailingMinus != null) return _parseMoneyFromLine(trailingMinus.group(1) ?? '');
+
     return _parseMoneyFromLine(line);
   }
 
@@ -1168,11 +1410,21 @@ class OcrService {
     if (_isOnlyMoneyLine(line)) return true;
     if (_isFooterStart(lower)) return true;
     if (_isTotalLabel(lower)) return true;
+
+    if (RegExp(r'^[-=_.*]{4,}$').hasMatch(line.trim())) return true;
+
     if (_containsAny(lower, [
       'alamat', 'jalan ', 'jln ', 'jl ', 'rt.', 'rw.', 'blok', 'kec:',
       'kec.', 'kota ', 'batam', 'npwp', 'npw:', 'npp', 'pt.', 'kasir',
       'receipt', 'telp', 'sms', 'wa:', 'kritik', 'saran', 'layanan',
-      'konsumen', 'email', '@', 'bon ', 'tgl ', 'igl.',
+      'konsumen', 'email', '@gmail', '@yahoo', 'bon ', 'tgl ', 'igl.',
+      'no. struk', 'no struk', 'no. meja', 'no meja', 'meja :', 'meja:',
+      'invoice', 'faktur', 'nota', 'no urut', 'antrian', 'no antrian',
+      'nama pelanggan', 'customer', 'pramusaji', 'waiter', 'kasir:',
+      // [BARU] Metadata POS modern / faktur grosir
+      'pos: cashier', 'cashier:', 'server:', 'print cnt', 'pax:',
+      'pelanggan', 'no.faktur', 'no. faktur', 'kode - nama',
+      'kode-nama', 'nama produk',
     ])) {
       return true;
     }
@@ -1229,6 +1481,12 @@ class OcrService {
     return _parseMoneyFromLine(raw);
   }
 
+  // [DIPERBAIKI] Sekarang bisa membedakan format Eropa/Indonesia
+  // ("58.200,000" -> titik=ribuan, koma=desimal, hasil 58200) dari format
+  // Barat/ERP ("17,000.00" -> koma=ribuan, titik=desimal, hasil 17000).
+  // Sebelumnya kode lama asal menggabungkan semua digit tanpa peduli mana
+  // pemisah ribuan dan mana desimal, sehingga angka bisa meleset 10x-1000x
+  // lipat pada struk yang memakai kedua simbol sekaligus.
   static int? _parseMoneyFromLine(String text) {
     var raw = text.trim();
     if (raw.isEmpty) return null;
@@ -1239,7 +1497,22 @@ class OcrService {
     if (matches.isEmpty) return null;
 
     var candidate = matches.last.group(0) ?? '';
-    candidate = candidate.trim();
+    candidate = candidate.trim().replaceAll(' ', '');
+
+    if (candidate.contains('.') && candidate.contains(',')) {
+      final lastComma = candidate.lastIndexOf(',');
+      final lastDot = candidate.lastIndexOf('.');
+      String integerPart;
+      if (lastComma > lastDot) {
+        // Koma paling akhir -> gaya Eropa/Indonesia: titik ribuan, koma desimal.
+        integerPart = candidate.substring(0, lastComma).replaceAll('.', '');
+      } else {
+        // Titik paling akhir -> gaya Barat/ERP: koma ribuan, titik desimal.
+        integerPart = candidate.substring(0, lastDot).replaceAll(',', '');
+      }
+      final digits = _digitsOnly(integerPart);
+      return digits.isEmpty ? null : int.tryParse(digits);
+    }
 
     final brokenTwoDigits = RegExp(r'^(\d{2})\s*,\s*(\d{2})$').firstMatch(candidate);
     if (brokenTwoDigits != null) {
@@ -1271,11 +1544,23 @@ class OcrService {
   }
 
   static Map<String, String?> _extractCodeAndName(String line) {
-    final clean = _normalizeText(line);
+    var clean = _normalizeText(line);
+
+    // [BARU] Buang nomor urut baris di depan, mis. "1 A0000441 TCBH..."
+    // -> "A0000441 TCBH..." (gaya faktur/invoice grosir).
+    clean = clean.replaceFirst(RegExp(r'^\d{1,3}\s+(?=[A-Za-z])'), '');
+
     final match = RegExp(r'^(\d{6,})\s+(.+)$').firstMatch(clean);
     if (match != null) {
       return {'code': match.group(1), 'name': _cleanName(match.group(2) ?? '')};
     }
+
+    // [BARU] Kode alfanumerik gaya invoice grosir, mis. "A0000441 TCBH 4B - ..."
+    final alnumCode = RegExp(r'^([A-Za-z]\d{5,})\s+(.+)$').firstMatch(clean);
+    if (alnumCode != null) {
+      return {'code': alnumCode.group(1), 'name': _cleanName(alnumCode.group(2) ?? '')};
+    }
+
     return {'code': null, 'name': _cleanName(clean)};
   }
 

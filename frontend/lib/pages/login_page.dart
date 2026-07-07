@@ -82,6 +82,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 18),
                 const Text(
                   "Welcome to Easy Inventory",
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w700,
