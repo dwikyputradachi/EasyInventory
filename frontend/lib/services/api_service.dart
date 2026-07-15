@@ -228,7 +228,7 @@ static Future<Map<String, dynamic>?> findProductByBarcode(
     }
   }
 
-  static Future<bool> updateItemStock(
+  static Future<Map<String, dynamic>?> updateItemStock(
     String idItem,
     int change, {
     int unitPrice = 0,
@@ -240,29 +240,28 @@ static Future<Map<String, dynamic>?> findProductByBarcode(
         body: jsonEncode({
           'id_item': idItem,
           'change': change,
-          'unit_price': unitPrice,
+          'unit_price': unitPrice, // tetap dikirim demi backward-compat kontrak,
+                                    // walau backend sekarang menghitung sendiri
         }),
       );
 
       debugPrint('========== UPDATE STOCK ==========');
       debugPrint('URL: $baseUrl/item/update_stock.php');
-      debugPrint('TOKEN: ${AppData().token}');
-      debugPrint(
-        'BODY SENT: {id_item: $idItem, change: $change, unit_price: $unitPrice}',
-      );
+      debugPrint('BODY SENT: {id_item: $idItem, change: $change, unit_price: $unitPrice}');
       debugPrint('STATUS: ${response.statusCode}');
       debugPrint('BODY: ${response.body}');
 
-      if (response.body.isEmpty) {
-        return false;
-      }
+      if (response.body.isEmpty) return null;
 
       final data = jsonDecode(response.body);
 
-      return response.statusCode == 200 && data['success'] == true;
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data'] as Map<String, dynamic>?;
+      }
+      return null;
     } catch (e) {
       debugPrint('UPDATE STOCK ERROR: $e');
-      return false;
+      return null;
     }
   }
 

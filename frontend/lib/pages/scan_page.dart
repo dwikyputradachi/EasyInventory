@@ -5,6 +5,7 @@ import '../services/ocr_service.dart';
 import 'crop_receipt_page.dart';
 import 'review_scan_page.dart';
 import '../widgets/tips_scan_dialog.dart';
+import '../services/groq_ocr_service.dart';
 
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
@@ -38,61 +39,106 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _onScanGallery() => _startFlow(camera: false);
 
   Future<void> _startFlow({required bool camera}) async {
-    if (_isBusy) return;
+  if (_isBusy) return;
 
-    // 1) Ambil foto dari kamera / galeri (belum diproses OCR).
-    final File? picked = camera
-        ? await OcrService.pickImageFromCamera()
-        : await OcrService.pickImageFromGallery();
-    if (picked == null || !mounted) return;
+  final File? picked = camera
+      ? await OcrService.pickImageFromCamera()
+      : await OcrService.pickImageFromGallery();
 
-    // 2) Crop foto sebelum diproses OCR.
-    final File? cropped = await Navigator.push<File?>(
-      context,
-      MaterialPageRoute(builder: (_) => CropReceiptPage(imageFile: picked)),
-    );
-    if (cropped == null || !mounted) return;
+  if (picked == null || !mounted) return;
 
-    // 3) Proses OCR dari foto yang sudah di-crop.
-    setState(() => _preview = _PreviewState.scanning);
-    try {
-      final receipt = await OcrService.scanReceiptFromFile(cropped);
-      if (!mounted) return;
+  final File? cropped = await Navigator.push<File?>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => CropReceiptPage(imageFile: picked),
+    ),
+  );
 
-      final items = List.from(receipt?['items'] ?? []);
-      final ambiguous = List.from(receipt?['ambiguous_items'] ?? []);
+  if (cropped == null || !mounted) return;
 
-      if (receipt == null || (items.isEmpty && ambiguous.isEmpty)) {
-        setState(() => _preview = _PreviewState.failed);
-        _snack(
-          camera
-              ? 'Tidak ada item terdeteksi. Coba foto struk lebih jelas.'
-              : 'Tidak ada item terdeteksi dari gambar tersebut.',
-          error: true,
-        );
-        return;
+  setState(() => _preview = _PreviewState.scanning);
+
+  try {
+    final receipt = await OcrService.scanReceiptFromFile(cropped);
+
+    if (!mounted) return;
+
+    if (receipt != null) {
+      final rawItems =
+          List<Map<String, dynamic>>.from(receipt['items'] ?? []);
+      final originalAmbiguous =
+          List<Map<String, dynamic>>.from(receipt['ambiguous_items'] ?? []);
+
+      if (rawItems.isNotEmpty) {
+        try {
+          final enhanced = await GroqOcrService.enhanceItems(
+            rawItems,
+            ocrDetectedTotal: receipt['ocr_detected_total'] as int?,
+          );
+
+          receipt['items'] = enhanced.items;
+          // Gabungkan item ambigu dari parser awal (OcrService) dengan yang
+          // baru terdeteksi lewat validasi Groq, alih-alih menghapusnya
+          // (rule #9: confidence rendah -> masuk ambiguous_items, bukan
+          // dibuang begitu saja).
+          receipt['ambiguous_items'] = [
+            ...originalAmbiguous,
+            ...enhanced.ambiguousItems,
+          ];
+        } catch (e) {
+          print("Groq gagal, menggunakan hasil OCR asli.");
+          print(e);
+
+          receipt['items'] = rawItems;
+          receipt['ambiguous_items'] = originalAmbiguous;
+        }
       }
+    }
 
-      setState(() => _preview = _PreviewState.success);
+    final items = List.from(receipt?['items'] ?? []);
+    final ambiguous = List.from(receipt?['ambiguous_items'] ?? []);
 
-      // 4) Pindah ke halaman review hasil scan.
-      final saved = await Navigator.push<bool?>(
-        context,
-        MaterialPageRoute(builder: (_) => ReviewScanPage(receipt: receipt)),
+    if (receipt == null || (items.isEmpty && ambiguous.isEmpty)) {
+      setState(() => _preview = _PreviewState.failed);
+
+      _snack(
+        camera
+            ? 'Tidak ada item terdeteksi. Coba foto struk lebih jelas.'
+            : 'Tidak ada item terdeteksi dari gambar tersebut.',
+        error: true,
       );
 
-      if (!mounted) return;
-      if (saved == true) {
-        Navigator.pop(context);
-        return;
-      }
-      setState(() => _preview = _PreviewState.idle);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _preview = _PreviewState.failed);
-      _snack('Gagal scan: $e', error: true);
+      return;
     }
+
+    setState(() => _preview = _PreviewState.success);
+
+    final saved = await Navigator.push<bool?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReviewScanPage(receipt: receipt),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (saved == true) {
+      Navigator.pop(context);
+      return;
+    }
+
+    setState(() => _preview = _PreviewState.idle);
+  } catch (e) {
+    if (!mounted) return;
+
+    setState(() => _preview = _PreviewState.failed);
+
+    _snack(
+      'Gagal scan: $e',
+      error: true,
+    );
   }
+}
 
   void _snack(String msg, {bool error = false}) {
     if (!mounted) return;

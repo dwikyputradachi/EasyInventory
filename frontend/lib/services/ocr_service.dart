@@ -10,7 +10,7 @@ class OcrService {
     script: TextRecognitionScript.latin,
   );
 
-  static const String _version = 'STABLE-V15-EU-US-NUMBER-FORMAT-LEADING-QTY';
+  static const String _version = 'STABLE-V17-FIX-DOUBLE-ITEM';
 
   static Future<List<Map<String, dynamic>>?> scanFromCamera() async {
     final receipt = await scanReceiptFromCamera();
@@ -94,6 +94,9 @@ class OcrService {
       print('========== PARSED RECEIPT ==========');
       print('STORE            : ${parsed['store_name']}');
       print('DATE             : ${parsed['date']}');
+      print('TRX NUMBER       : ${parsed['transaction_number']}');
+      print('CASHIER          : ${parsed['cashier']}');
+      print('PAYMENT METHOD   : ${parsed['payment_method']}');
       print('OCR TOTAL        : ${parsed['ocr_detected_total']}');
       print('CALCULATED TOTAL : ${parsed['calculated_total']}');
       print('DIFFERENCE       : ${parsed['difference']}');
@@ -125,12 +128,15 @@ class OcrService {
 
     final storeName = _detectStoreName(lines);
     final date = _detectDate(lines);
+    final transactionNumber = _detectTransactionNumber(lines);
+    final cashier = _detectCashier(lines);
     final zone = _detectReceiptZones(lines);
 
     final summary = _parseSummaryFromBottom(lines);
     final discounts = _parseDiscounts(lines);
     final items = _parseItemsFromZone(lines, zone['itemStart']!, zone['itemEnd']!);
-    final mergedItems = _mergeDuplicateItems(items);
+    var mergedItems = _mergeDuplicateItems(items);
+    mergedItems = _scoreItemsConfidence(mergedItems);
 
     var ambiguousItems = _collectAmbiguousItemsFromZone(
       lines,
@@ -145,13 +151,13 @@ class OcrService {
     );
 
     final sumItems = _sumItemTotals(mergedItems);
-    final savings = summary['savings'] ?? _sumDiscounts(discounts);
+    final savings = summary.savings ?? _sumDiscounts(discounts);
 
-    int? subtotal = summary['subtotal'];
+    int? subtotal = summary.subtotal;
 
-    final ocrDetectedTotal = summary['total'];
+    final int? ocrDetectedTotal = summary.total;
 
-    int? total = summary['total'];
+    int? total = summary.total;
     subtotal ??= sumItems;
     final computedAfterDiscount = sumItems - (savings ?? 0);
     if (total == null || total <= 0) {
@@ -171,9 +177,18 @@ class OcrService {
       savings: savings,
     );
 
+    if (_containsCancelledTransactionMarker(lines)) {
+      warnings.add(
+        'Terdeteksi kata seperti CANCEL/VOID/RETUR/REFUND pada struk. '
+        'Transaksi ini mungkin telah dibatalkan — mohon periksa ulang sebelum menyimpan.',
+      );
+    }
+
     return {
       'store_name': storeName,
       'date': date,
+      'transaction_number': transactionNumber,
+      'cashier': cashier,
       'items': mergedItems,
       'ambiguous_items': ambiguousItems,
       'subtotal': subtotal,
@@ -181,11 +196,12 @@ class OcrService {
       'ocr_detected_total': ocrDetectedTotal,
       'calculated_total': calculatedTotal,
       'difference': difference,
-      'paid': summary['paid'],
-      'change': summary['change'],
+      'paid': summary.paid,
+      'change': summary.change,
+      'payment_method': summary.paymentMethodLabel,
       'savings': savings,
-      'tax': summary['tax'],
-      'service_charge': summary['service_charge'],
+      'tax': summary.tax,
+      'service_charge': summary.serviceCharge,
       'discounts': discounts,
       'extra_charges': <Map<String, dynamic>>[],
       'raw_lines': lines,
@@ -194,6 +210,122 @@ class OcrService {
     };
   }
 
+  static String? _detectTransactionNumber(List<String> lines) {
+    final patterns = <RegExp>[
+      RegExp(r'no\.?\s*struk\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'no\.?\s*bon\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'no\.?\s*invoice\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'no\.?\s*faktur\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'no\.?\s*transaksi\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'no\.?\s*nota\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'trans(?:aksi)?\s*#\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'\bref\.?\s*#?\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'receipt\s*#?\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+      RegExp(r'\binvoice\s*#?\s*[:\-]?\s*([A-Za-z0-9\-/]{3,})', caseSensitive: false),
+    ];
+
+    for (final line in lines.take(25)) {
+      final lowerCheck = _normalizeKeyword(line);
+      if (_containsAny(lowerCheck, ['npwp', 'npw', 'npp'])) continue;
+
+      for (final pattern in patterns) {
+        final match = pattern.firstMatch(line);
+        if (match != null) {
+          final value = match.group(1)?.trim();
+          if (value != null && value.length >= 3 && RegExp(r'[0-9]').hasMatch(value)) {
+            return value;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  static String? _detectCashier(List<String> lines) {
+    final patterns = <RegExp>[
+      RegExp(r'^kasir\s*[:\-]\s*(.+)$', caseSensitive: false),
+      RegExp(r'^cashier\s*[:\-]\s*(.+)$', caseSensitive: false),
+      RegExp(r'^pos\s*:\s*cashier\s*[:\-]?\s*(.+)$', caseSensitive: false),
+      RegExp(r'^server\s*[:\-]\s*(.+)$', caseSensitive: false),
+    ];
+
+    for (final line in lines.take(30)) {
+      final clean = _normalizeText(line);
+      for (final pattern in patterns) {
+        final match = pattern.firstMatch(clean);
+        if (match != null) {
+          var name = match.group(1)?.trim() ?? '';
+          name = name.replaceAll(RegExp(r'[^A-Za-z0-9\s.\-]'), '').trim();
+          if (name.isNotEmpty && RegExp(r'[a-zA-Z]{2,}').hasMatch(name)) {
+            return _toTitleCase(name);
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  static List<Map<String, dynamic>> _scoreItemsConfidence(List<Map<String, dynamic>> items) {
+    return items.map((item) {
+      final scored = Map<String, dynamic>.from(item);
+      scored['confidence'] = _scoreSingleItemConfidence(item);
+      return scored;
+    }).toList();
+  }
+
+  static double _scoreSingleItemConfidence(Map<String, dynamic> item) {
+    double score = 0.75;
+
+    // Item dengan kode/barcode berasal dari baris detail terstruktur
+    // (mis. "8991002123456 2 PCS X 5.500") -> jauh lebih bisa dipercaya.
+    final code = item['code'];
+    if (code != null && code.toString().trim().isNotEmpty) {
+      score += 0.15;
+    }
+
+    final name = (item['name'] ?? '').toString();
+    final letterCount = RegExp(r'[a-zA-Z]').allMatches(name).length;
+    if (letterCount >= 4) {
+      score += 0.05;
+    } else if (letterCount < 3) {
+      score -= 0.10;
+    }
+
+    final price = item['price'] is int ? item['price'] as int : 0;
+    // Harga di ujung batas wajar (sangat kecil/sangat besar) sedikit lebih
+    // berisiko salah baca dibanding harga di rentang umum minimarket.
+    if (price <= 200 || price >= 1500000) {
+      score -= 0.10;
+    }
+
+    final quantity = item['quantity'] is int ? item['quantity'] as int : 1;
+    if (quantity == 1) {
+      score += 0.05;
+    } else if (quantity > 20) {
+      score -= 0.10;
+    }
+
+    return score.clamp(0.0, 1.0);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // [FIX - DOUBLE ITEM] Sebelumnya findMissingItems memindai ulang SEMUA
+  // baris di zona item tanpa pernah mencoba mem-parsing-nya sebagai item
+  // (qty+price) terlebih dahulu. Akibatnya baris yang SEBENARNYA sudah
+  // berhasil di-parse dan masuk ke `PARSED ITEMS` (mis. "INDOHIE GPRK8SG 1
+  // 3,900") ikut dianggap "item baru yang belum lengkap" karena key hasil
+  // _cleanName-nya berbeda dari key item yang sudah confirmed (lihat fix
+  // _cleanName di bawah). Baris itu lalu didorong ulang ke
+  // ambiguous_items dengan harga null -> item tampak dobel (satu di
+  // Daftar Belanja, satu lagi di Item Perlu Konfirmasi).
+  //
+  // Fix: skip baris yang memang sudah bisa di-parse sebagai item row
+  // (qty+price jelas terbaca). findMissingItems HANYA boleh menangkap
+  // baris yang benar-benar terlihat seperti nama produk tapi harga/qty-nya
+  // gagal terbaca sama sekali.
+  // ─────────────────────────────────────────────────────────────────────
   static List<Map<String, dynamic>> findMissingItems(
       List<String> lines,
       int itemStart,
@@ -218,6 +350,13 @@ class OcrService {
       if (_isDiscountLine(lower)) continue;
       if (_isIgnoredMinimarketCharge(lower)) continue;
       if (_isDefinitelyNotItemLine(line)) continue;
+
+      // [FIX] Baris yang qty+price-nya sudah jelas terbaca BUKAN "item
+      // hilang" — baris ini sudah (atau seharusnya) tertangkap oleh
+      // _parseItemsFromZone / _collectAmbiguousItemsFromZone. Jangan
+      // didorong lagi ke sini, atau item akan muncul dobel.
+      if (_looksLikeItemRow(line)) continue;
+
       if (!_looksLikeLooseProductName(line)) continue;
 
       final cleaned = _cleanName(line);
@@ -630,11 +769,34 @@ class OcrService {
 
         final priceOnly = _parseMoneyFromLine(line);
         if (_isOnlyMoneyLine(line) && priceOnly != null && _isValidItemPrice(priceOnly)) {
+          // [BARU] Aturan: jika ditemukan dua baris angka berurutan tanpa
+          // qty eksplisit (mis. "5500" lalu "11000"), dan baris kedua adalah
+          // kelipatan bulat dari baris pertama, maka baris pertama adalah
+          // HARGA SATUAN dan baris kedua adalah TOTAL BARIS, sehingga
+          // qty = total / harga (bukan langsung dianggap qty=1).
+          int quantity = 1;
+          int lineTotal = priceOnly;
+
+          if (i + 1 < itemEnd && _isOnlyMoneyLine(lines[i + 1])) {
+            final nextValue = _parseMoneyFromLine(lines[i + 1]);
+            if (nextValue != null &&
+                nextValue > priceOnly &&
+                priceOnly > 0 &&
+                nextValue % priceOnly == 0) {
+              final derivedQty = nextValue ~/ priceOnly;
+              if (derivedQty > 1 && derivedQty <= 99) {
+                quantity = derivedQty;
+                lineTotal = nextValue;
+                i++; // baris total ikut terkonsumsi, jangan diproses ulang
+              }
+            }
+          }
+
           final item = _buildItem(
             name: pendingName,
-            quantity: 1,
+            quantity: quantity,
             unitPrice: priceOnly,
-            lineTotal: priceOnly,
+            lineTotal: lineTotal,
             code: pendingCode,
           );
           if (item != null) items.add(item);
@@ -918,8 +1080,19 @@ class OcrService {
       }
     }
 
-    final lastPrice = _parseMoneyToken(tokens.last);
-    if (lastPrice != null && _isValidItemPrice(lastPrice)) {
+    final lastToken = tokens.last;
+    final lastPrice = _parseMoneyToken(lastToken);
+    // [BARU] Guard untuk aturan #8: angka telanjang 3 digit tanpa pemisah
+    // ribuan (mis. "300" dari "I/F BISC.WNDRLND 300") sangat sering
+    // sebenarnya adalah bagian ukuran/berat produk (300G/300ML yang
+    // satuannya terpotong OCR), BUKAN harga. Fallback paling lemah ini
+    // hanya dipakai jika angka >= 1000 (harga wajar minimarket) ATAU sudah
+    // memakai pemisah ribuan eksplisit (mis. "1.500"/"1,500"), supaya
+    // angka ukuran kecil tidak keliru jadi harga.
+    final hasThousandSeparator = lastToken.contains('.') || lastToken.contains(',');
+    if (lastPrice != null &&
+        _isValidItemPrice(lastPrice) &&
+        (lastPrice >= 1000 || hasThousandSeparator)) {
       final rawName = tokens.sublist(0, tokens.length - 1).join(' ');
       if (_looksLikeLooseProductName(rawName)) {
         return _buildItem(name: rawName, quantity: 1, unitPrice: lastPrice, lineTotal: lastPrice);
@@ -1094,7 +1267,7 @@ class OcrService {
   // miliaran) tidak ikut merusak ringkasan struk.
   static const int _kMaxReasonableAmount = 100000000; // 100 juta
 
-  static Map<String, int?> _parseSummaryFromBottom(List<String> lines) {
+  static _SummaryParseResult _parseSummaryFromBottom(List<String> lines) {
     int? subtotal;
     int? total;
     int? paid;
@@ -1102,6 +1275,7 @@ class OcrService {
     int? savings;
     int? tax;
     int? serviceCharge;
+    String? paymentMethodLabel;
 
     for (int i = 0; i < lines.length; i++) {
       final line = _normalizeText(lines[i]);
@@ -1132,7 +1306,10 @@ class OcrService {
 
       if (lower.startsWith('tunai') || lower.startsWith('cash')) {
         final v = _valueOnSameOrNext(lines, i);
-        if (v != null && v <= _kMaxReasonableAmount) paid = v;
+        if (v != null && v <= _kMaxReasonableAmount) {
+          paid = v;
+          paymentMethodLabel ??= 'Tunai';
+        }
         continue;
       }
       if (lower.startsWith('debit') ||
@@ -1141,7 +1318,18 @@ class OcrService {
           lower.contains('non tunai') ||
           lower.startsWith('pembayaran')) {
         final v = _valueOnSameOrNext(lines, i);
-        if (paid == null && v != null && v <= _kMaxReasonableAmount) paid = v;
+        if (paid == null && v != null && v <= _kMaxReasonableAmount) {
+          paid = v;
+          if (lower.startsWith('qris')) {
+            paymentMethodLabel ??= 'QRIS';
+          } else if (lower.startsWith('debit')) {
+            paymentMethodLabel ??= 'Debit';
+          } else if (lower.startsWith('kartu')) {
+            paymentMethodLabel ??= 'Kartu';
+          } else if (lower.contains('non tunai')) {
+            paymentMethodLabel ??= 'Non Tunai';
+          }
+        }
         continue;
       }
 
@@ -1166,15 +1354,16 @@ class OcrService {
       }
     }
 
-    return {
-      'subtotal': subtotal,
-      'total': total,
-      'paid': paid,
-      'change': change,
-      'savings': savings,
-      'tax': tax,
-      'service_charge': serviceCharge,
-    };
+    return _SummaryParseResult(
+      subtotal: subtotal,
+      total: total,
+      paid: paid,
+      change: change,
+      savings: savings,
+      tax: tax,
+      serviceCharge: serviceCharge,
+      paymentMethodLabel: paymentMethodLabel,
+    );
   }
 
   static bool _isTotalLabel(String lower) {
@@ -1404,12 +1593,32 @@ class OcrService {
     return warnings;
   }
 
+  // [BARU] Aturan #4: kata-kata seperti CANCEL/VOID/RETUR/REFUND menandakan
+  // baris tersebut BUKAN item belanja, dan bisa jadi seluruh transaksi
+  // dibatalkan. Dicek terpisah dari _isDefinitelyNotItemLine supaya bisa
+  // dipakai juga untuk warning tingkat-struk di parseReceiptText.
+  static const List<String> _cancelKeywords = [
+    'cancel', 'void', 'retur', 'refund', 'dibatalkan', 'batal',
+  ];
+
+  static bool _isCancelKeywordLine(String lower) {
+    return _containsAny(lower, _cancelKeywords);
+  }
+
+  static bool _containsCancelledTransactionMarker(List<String> lines) {
+    for (final line in lines) {
+      if (_isCancelKeywordLine(_normalizeKeyword(line))) return true;
+    }
+    return false;
+  }
+
   static bool _isDefinitelyNotItemLine(String line) {
     final lower = _normalizeKeyword(line);
 
     if (_isOnlyMoneyLine(line)) return true;
     if (_isFooterStart(lower)) return true;
     if (_isTotalLabel(lower)) return true;
+    if (_isCancelKeywordLine(lower)) return true;
 
     if (RegExp(r'^[-=_.*]{4,}$').hasMatch(line.trim())) return true;
 
@@ -1564,15 +1773,48 @@ class OcrService {
     return {'code': null, 'name': _cleanName(clean)};
   }
 
+  // ─────────────────────────────────────────────────────────────────────
+  // [FIX - DOUBLE ITEM] Urutan lama menghancurkan koma/titik (diganti
+  // spasi oleh baris karakter-filter) SEBELUM regex trailing-amount
+  // sempat mencoba mencocokkan pola harga ribuan "1 3,900". Akibatnya
+  // baris seperti "INDOHIE GPRK8SG 1 3,900" tidak pernah dipotong jadi
+  // "Indohie Gprk8sg" — hasilnya jadi "Indohie Gprk8sg 1 3 900", yang
+  // membuat key pencocokan berbeda dari item yang sudah confirmed
+  // (dari _buildItem, yang memakai _cleanName pada NAMA SAJA tanpa
+  // qty/harga menempel). Ini salah satu penyebab item tampak dobel di
+  // findMissingItems.
+  //
+  // Fix: coba potong trailing "qty harga" SEBELUM simbol koma/titik
+  // dihancurkan, DAN sediakan fallback setelahnya untuk pola yang sudah
+  // terlanjur jadi angka-berspasi.
+  // ─────────────────────────────────────────────────────────────────────
   static String _cleanName(String raw) {
     var name = raw.trim();
 
     name = name.replaceAll(RegExp(r'\bRp\b', caseSensitive: false), ' ');
     name = name.replaceAll(RegExp(r'^\d+\.\s*'), ' ');
+
+    // [FIX] Potong dulu selagi koma/titik ribuan masih ada, mis.
+    // "Indohie Gprk8sg 1 3,900" -> "Indohie Gprk8sg 1" -> (di bawah)
+    // "Indohie Gprk8sg". Cakupi juga varian dengan qty di depan harga.
+    name = name.replaceAll(RegExp(r'\s+\d{1,3}([.,]\d{3})+$'), '').trim();
+    name = name.replaceAll(RegExp(r'\s+\d{1,2}\s+\d{1,3}([.,]\d{3})+$'), '').trim();
+
     name = name.replaceAll(RegExp(r"[^a-zA-Z0-9\s_./&\-']"), ' ');
     name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-    name = name.replaceAll(RegExp(r'\s+\d{1,3}([.,]\d{3})+$'), '').trim();
+    // [FIX] Fallback: setelah koma/titik dihancurkan jadi spasi, tangani
+    // juga pola harga ribuan yang sudah berubah jadi "1 3 900" di akhir
+    // baris (qty lalu harga terpisah spasi karena pemisah ribuan hilang).
+    name = name.replaceAll(RegExp(r'\s+\d{1,2}\s+\d{1,3}\s\d{3}$'), '').trim();
+    // Harga ribuan tanpa qty eksplisit di depan, mis. "Nama 3 900" -> "Nama".
+    name = name.replaceAll(RegExp(r'\s+\d{1,3}\s\d{3}$'), '').trim();
+
+    // [FIX] Setelah harga terpotong, sisa qty telanjang 1-2 digit di akhir
+    // (mis. "Indohie Gprk8sg 1" dari "INDOHIE GPRK8SG 1 3,900") tetap
+    // membuat key berbeda dari item yang sudah confirmed. Buang juga sisa
+    // qty ini supaya key pencocokan konsisten.
+    name = name.replaceAll(RegExp(r'\s+\d{1,2}$'), '').trim();
 
     return name;
   }
@@ -1649,4 +1891,34 @@ class OcrService {
   static void dispose() {
     _recognizer.close();
   }
+}
+
+/// Hasil parsing ringkasan struk (subtotal/total/pembayaran/pajak/dll).
+///
+/// Dulu ini sempat berupa `Map<String, dynamic>` supaya bisa menampung
+/// [paymentMethodLabel] (String) di samping field lain yang int. Itu bikin
+/// beberapa variabel di [OcrService.parseReceiptText] ikut ke-infer
+/// `dynamic`, yang error di project dengan `strict-casts: true`. Class ini
+/// memberi tipe eksplisit ke tiap field supaya tidak ada dynamic sama
+/// sekali dan aman di analysis mode seketat apapun.
+class _SummaryParseResult {
+  final int? subtotal;
+  final int? total;
+  final int? paid;
+  final int? change;
+  final int? savings;
+  final int? tax;
+  final int? serviceCharge;
+  final String? paymentMethodLabel;
+
+  const _SummaryParseResult({
+    this.subtotal,
+    this.total,
+    this.paid,
+    this.change,
+    this.savings,
+    this.tax,
+    this.serviceCharge,
+    this.paymentMethodLabel,
+  });
 }

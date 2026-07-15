@@ -3,7 +3,6 @@ import '../constants/colors.dart';
 import '../models/product_model.dart';
 import '../services/api_service.dart';
 import 'package:quickalert/quickalert.dart';
-import 'package:flutter/services.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final Product product;
@@ -18,40 +17,51 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   late Product product;
 
   final units = const ['pcs', 'kg', 'gram', 'liter', 'ml', 'botol', 'bungkus'];
+
+  // NOTE (assumption): categories are loaded from ApiService.getCategories(),
+  // expected to return a List of {'id_category': int, 'name_category': String}.
+  List<Map<String, dynamic>> _categories = [];
+
   String _formatRupiah(String value) {
-  final number = value.replaceAll(RegExp(r'[^0-9]'), '');
+    final number = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (number.isEmpty) return '';
 
-  if (number.isEmpty) return '';
+    final chars = number.split('').reversed.toList();
+    final result = <String>[];
 
-  final chars = number.split('').reversed.toList();
-  final result = <String>[];
-
-  for (int i = 0; i < chars.length; i++) {
-    if (i > 0 && i % 3 == 0) {
-      result.add('.');
+    for (int i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) result.add('.');
+      result.add(chars[i]);
     }
-    result.add(chars[i]);
+
+    return result.reversed.join();
   }
 
-  return result.reversed.join();
-}
-
-int _parseRupiah(String value) {
-  return int.tryParse(
-        value.replaceAll('.', ''),
-      ) ??
-      0;
-}
   @override
   void initState() {
     super.initState();
     product = widget.product;
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final cats = await ApiService.getCategories();
+      if (!mounted) return;
+      setState(() {
+        _categories = List<Map<String, dynamic>>.from(cats);
+      });
+    } catch (e) {
+      // Silent fail: edit sheet will just show "No Category" as the only
+      // option if categories can't be loaded, rest of the page still works.
+    }
   }
 
   void _deleteProduct() {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text("Delete Product?"),
         content: Text("${product.name} will be removed from inventory."),
         actions: [
@@ -60,38 +70,39 @@ int _parseRupiah(String value) {
             child: const Text("Cancel"),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-onPressed: () async {
-  final success = await ApiService.deleteItem(product.id);
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              final success = await ApiService.deleteItem(product.id);
+              if (!mounted) return;
 
-  if (!mounted) return;
+              if (!success) {
+                Navigator.pop(context);
+                QuickAlert.show(
+                  context: context,
+                  type: QuickAlertType.error,
+                  title: 'Delete Failed',
+                  text: 'Failed to delete product.',
+                );
+                return;
+              }
 
-  if (!success) {
-    Navigator.pop(context);
+              Navigator.pop(context);
+              await QuickAlert.show(
+                context: context,
+                type: QuickAlertType.success,
+                title: 'Deleted',
+                text: 'Product deleted successfully.',
+                confirmBtnText: 'OK',
+              );
 
-    QuickAlert.show(
-      context: context,
-      type: QuickAlertType.error,
-      title: 'Delete Failed',
-      text: 'Failed to delete product.',
-    );
-
-    return;
-  }
-
-  Navigator.pop(context);
-
-  await QuickAlert.show(
-    context: context,
-    type: QuickAlertType.success,
-    title: 'Deleted',
-    text: 'Product deleted successfully.',
-    confirmBtnText: 'OK',
-  );
-
-  if (!mounted) return;
-  Navigator.pop(context, 'deleted');
-},
+              if (!mounted) return;
+              Navigator.pop(context, 'deleted');
+            },
             child: const Text("Delete"),
           ),
         ],
@@ -101,91 +112,113 @@ onPressed: () async {
 
   void _editProduct() {
     final nameC = TextEditingController(text: product.name);
-    final qtyC = TextEditingController(text: product.stock.toString());
-    final priceC = TextEditingController(
-  text: _formatRupiah(product.price.toString()),
-);
     final barcodeC = TextEditingController(text: product.barcode ?? '');
 
     String unit = product.unit;
     DateTime expiredDate = product.expiryDate;
 
+    // Product model doesn't carry id_category (only the category name), so
+    // we resolve the current category's id by matching product.category
+    // against the loaded _categories list.
+    int? selectedCategoryId;
+    final matchedCategory = _categories.firstWhere(
+      (c) =>
+          (c['name_category']?.toString().toLowerCase() ?? '') ==
+          product.category.toLowerCase(),
+      orElse: () => const {},
+    );
+    if (matchedCategory.isNotEmpty) {
+      selectedCategoryId = matchedCategory['id_category'] as int?;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
         builder: (context, setModal) {
-          return Padding(
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
             padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 20,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              left: 24,
+              right: 24,
+              top: 12,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
             ),
             child: ListView(
               shrinkWrap: true,
               children: [
-                const Text(
-                  "Edit Product",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: AppColors.textSecondary.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 16),
+                Text(
+                  "Edit Product",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Update product details. Stock is managed from Category page.",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                _sectionLabel("Basic Info"),
+                const SizedBox(height: 10),
                 TextField(
                   controller: nameC,
-                  decoration: _input("Product Name"),
+                  decoration: _input("Product Name", icon: Icons.inventory_2_outlined),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: qtyC,
-                        keyboardType: TextInputType.number,
-                        decoration: _input("Quantity"),
-                      ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<int?>(
+                  value: selectedCategoryId,
+                  decoration: _input("Category", icon: Icons.category_outlined),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text("No Category"),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: unit,
-                        decoration: _input("Unit"),
-                        items: units
-                            .map(
-                              (u) => DropdownMenuItem(
-                                value: u,
-                                child: Text(u),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setModal(() => unit = v!),
+                    ..._categories.map(
+                      (c) => DropdownMenuItem<int?>(
+                        value: c['id_category'] as int?,
+                        child: Text(c['name_category']?.toString() ?? ''),
                       ),
                     ),
                   ],
+                  onChanged: (v) => setModal(() => selectedCategoryId = v),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: priceC,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    TextInputFormatter.withFunction((oldValue, newValue) {
-                      final formatted = _formatRupiah(newValue.text);
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  value: unit,
+                  decoration: _input("Unit", icon: Icons.straighten_outlined),
+                  items: units
+                      .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                      .toList(),
+                  onChanged: (v) => setModal(() => unit = v!),
+                ),
 
-                      return TextEditingValue(
-                        text: formatted,
-                        selection: TextSelection.collapsed(
-                          offset: formatted.length,
-                        ),
-                      );
-                    }),
-                  ],
-                  decoration: _input("Price"),
-                ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 24),
+                _sectionLabel("Additional Details"),
+                const SizedBox(height: 10),
                 InkWell(
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -194,58 +227,92 @@ onPressed: () async {
                       firstDate: DateTime.now(),
                       lastDate: DateTime.now().add(const Duration(days: 3650)),
                     );
-
                     if (picked != null) {
                       setModal(() => expiredDate = picked);
                     }
                   },
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                   child: Container(
-                    padding: const EdgeInsets.all(14),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.background,
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
                       children: [
                         const Icon(
                           Icons.calendar_today_outlined,
                           color: AppColors.primary,
-                          size: 18,
+                          size: 20,
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          "${expiredDate.day}/${expiredDate.month}/${expiredDate.year}",
-                          style: const TextStyle(color: AppColors.textPrimary),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Expired Date",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              "${expiredDate.day}/${expiredDate.month}/${expiredDate.year}",
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 TextField(
                   controller: barcodeC,
                   keyboardType: TextInputType.number,
-                  decoration: _input("Barcode (optional)"),
+                  decoration: _input(
+                    "Barcode (optional)",
+                    icon: Icons.qr_code_2_outlined,
+                  ),
                 ),
-                const SizedBox(height: 20),
+
+                const SizedBox(height: 28),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
+                  height: 52,
+                  child: FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
                     ),
                     onPressed: () async {
+                      // Stock & price stay untouched by the user — we still
+                      // send the existing values because the update endpoint
+                      // requires quantity and will overwrite price if it's
+                      // not provided.
                       final success = await ApiService.updateItem(
                         product.id,
                         {
                           'name': nameC.text.trim(),
-                          'quantity': int.tryParse(qtyC.text) ?? product.stock,
-                          'price': _parseRupiah(priceC.text),
+                          'quantity': product.stock,
+                          'price': product.price,
                           'unit': unit,
                           'barcode': barcodeC.text.trim(),
-                          'expired_date': expiredDate.toIso8601String().split('T').first,
+                          'expired_date':
+                              expiredDate.toIso8601String().split('T').first,
+                          'id_category': selectedCategoryId,
                         },
                       );
 
@@ -261,15 +328,18 @@ onPressed: () async {
                         return;
                       }
 
-                      // 1. Tutup bottom sheet edit terlebih dahulu
                       Navigator.pop(context);
 
-                      // 2. Tampilkan SnackBar sebagai notifikasi sukses yang bersih tanpa pop-up mengganggu
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text("${nameC.text.trim()} berhasil diperbarui!"),
+                          content: Text(
+                            "${nameC.text.trim()} berhasil diperbarui!",
+                          ),
                           backgroundColor: Colors.green,
                           behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           duration: const Duration(seconds: 2),
                         ),
                       );
@@ -277,9 +347,14 @@ onPressed: () async {
                       if (!mounted) return;
                       Navigator.pop(context, true);
                     },
-                    child: const Text(
+                    icon: const Icon(Icons.check, color: Colors.white),
+                    label: const Text(
                       "Save Changes",
-                      style: TextStyle(color: Colors.white),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ),
@@ -327,15 +402,43 @@ onPressed: () async {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          // Header card — name & category
           Container(
-            padding: const EdgeInsets.all(20),
+            width: double.infinity,
+            padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    product.category,
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Text(
                   product.name,
                   style: const TextStyle(
@@ -344,39 +447,86 @@ onPressed: () async {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  product.category,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 14,
-                  ),
-                ),
-                const Divider(height: 30),
-                _rowInfo("Stock", "${product.stock} ${product.unit}"),
-            _rowInfo(
-  "Price",
-  "Rp ${_formatRupiah(product.price.toString())}",
-),
-                _rowInfo("Expired", expiredDate),
-                if (product.barcode != null && product.barcode!.isNotEmpty)
-                  _rowInfo("Barcode", product.barcode!),
               ],
             ),
           ),
-          const SizedBox(height: 24),
+
+          const SizedBox(height: 16),
+
+          // Info card — read-only details
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionLabel("Inventory Info"),
+                const SizedBox(height: 4),
+                Text(
+                  "Managed from Category page",
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary.withOpacity(0.8),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _rowInfo(
+                  Icons.inventory_outlined,
+                  "Stock",
+                  "${product.stock} ${product.unit}",
+                ),
+                _rowInfo(
+                  Icons.payments_outlined,
+                  "Price",
+                  "Rp ${_formatRupiah(product.price.toString())}",
+                ),
+                const Divider(height: 28),
+                _sectionLabel("Product Details"),
+                const SizedBox(height: 14),
+                _rowInfo(Icons.event_outlined, "Expired", expiredDate),
+                if (product.barcode != null && product.barcode!.isNotEmpty)
+                  _rowInfo(
+                    Icons.qr_code_2_outlined,
+                    "Barcode",
+                    product.barcode!,
+                  ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 28),
           SizedBox(
             width: double.infinity,
+            height: 52,
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 0,
               ),
               onPressed: _editProduct,
               icon: const Icon(Icons.edit_outlined, color: Colors.white),
               label: const Text(
                 "Edit Product",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
               ),
             ),
           ),
@@ -385,29 +535,54 @@ onPressed: () async {
     );
   }
 
-  Widget _rowInfo(String label, String value) {
+  Widget _sectionLabel(String text) {
+    return Text(
+      text.toUpperCase(),
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.6,
+        color: AppColors.textSecondary,
+      ),
+    );
+  }
+
+  Widget _rowInfo(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 85,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(10),
             ),
+            child: Icon(icon, size: 18, color: AppColors.primary),
           ),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -415,14 +590,19 @@ onPressed: () async {
     );
   }
 
-  InputDecoration _input(String hint) {
+  InputDecoration _input(String label, {IconData? icon}) {
     return InputDecoration(
-      hintText: hint,
+      labelText: label,
+      prefixIcon: icon != null ? Icon(icon, size: 20) : null,
       filled: true,
       fillColor: AppColors.background,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide.none,
+      ),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 14,
       ),
     );
   }

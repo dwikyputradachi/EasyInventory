@@ -41,3 +41,15 @@
 # ============================================================
 -keep class io.flutter.plugins.** { *; }
 -keep class io.flutter.plugin.** { *; }
+
+# ============================================================
+# ML Kit Barcode Scanning (dipakai oleh mobile_scanner)
+# ============================================================
+-keep class com.google.mlkit.vision.barcode.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_barcode.** { *; }
+-keep class com.google.android.gms.vision.** { *; }
+-dontwarn com.google.mlkit.vision.barcode.**
+
+# mobile_scanner plugin itu sendiri
+-keep class dev.steenbakker.mobile_scanner.** { *; }
+-dontwarn dev.steenbakker.mobile_scanner.**

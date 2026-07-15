@@ -3,6 +3,7 @@ import '../constants/colors.dart';
 import '../services/receipt_service.dart';
 import '../widgets/scan_item_tile.dart';
 import '../widgets/scan_item_editor.dart';
+import '../widgets/ambiguous_item_compact.dart';
 
 /// Halaman review hasil OCR. Dipush setelah OCR selesai dari ScanPage.
 ///
@@ -19,9 +20,15 @@ class ReviewScanPage extends StatefulWidget {
 }
 
 class _ReviewScanPageState extends State<ReviewScanPage> {
+  // Jumlah item ambigu yang ditampilkan sebelum disembunyikan di balik
+  // tombol "Lihat item lainnya" — mencegah daftar terasa penuh/berantakan
+  // saat hasil OCR menghasilkan banyak item yang perlu dikonfirmasi.
+  static const int _ambiguousPreviewCount = 3;
+
   late List<Map<String, dynamic>> _scannedItems;
   late List<Map<String, dynamic>> _ambiguousItems;
   bool _isSaving = false;
+  bool _showAllAmbiguous = false;
 
   @override
   void initState() {
@@ -162,6 +169,15 @@ class _ReviewScanPageState extends State<ReviewScanPage> {
     return _totalHasilScan - ocrTotal;
   }
 
+  /// Entry item ambigu yang sedang ditampilkan. Dibatasi ke
+  /// [_ambiguousPreviewCount] kecuali user menekan "Lihat item lainnya",
+  /// supaya daftar tidak langsung memenuhi layar saat item ambigu banyak.
+  List<MapEntry<int, Map<String, dynamic>>> get _visibleAmbiguousEntries {
+    final entries = _ambiguousItems.asMap().entries.toList();
+    if (_showAllAmbiguous || entries.length <= _ambiguousPreviewCount) return entries;
+    return entries.take(_ambiguousPreviewCount).toList();
+  }
+
   List<Map<String, dynamic>> _itemsForSave() {
     return _scannedItems.map((item) {
       final price = _toInt(item['price']);
@@ -253,18 +269,34 @@ class _ReviewScanPageState extends State<ReviewScanPage> {
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
                     const SizedBox(height: 4),
                     const Text(
-                      'Item berikut belum yakin terbaca. Tambahkan, lengkapi, atau abaikan.',
+                      'Tap item untuk lengkapi. Gunakan ikon centang/silang untuk tambah/abaikan cepat.',
                       style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 12),
-                    ..._ambiguousItems.asMap().entries.map((e) => AmbiguousItemTile(
-                      parsed: _itemFromAmbiguous(e.value),
-                      rawText: e.value['raw_text']?.toString() ?? '',
-                      reason: e.value['reason']?.toString() ?? 'Perlu dikonfirmasi sebelum disimpan.',
-                      onIgnore: () => _ignoreAmbiguous(e.key),
-                      onEdit: () => _editAmbiguous(e.key),
-                      onAdd: () => _addAmbiguous(e.key),
-                    )),
+                    ..._visibleAmbiguousEntries.map((e) => CompactAmbiguousTile(
+                          parsed: _itemFromAmbiguous(e.value),
+                          rawText: e.value['raw_text']?.toString() ?? '',
+                          reason: e.value['reason']?.toString() ?? 'Perlu dikonfirmasi sebelum disimpan.',
+                          onTap: () => _editAmbiguous(e.key),
+                          onAdd: () => _addAmbiguous(e.key),
+                          onIgnore: () => _ignoreAmbiguous(e.key),
+                        )),
+                    if (_ambiguousItems.length > _ambiguousPreviewCount)
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => setState(() => _showAllAmbiguous = !_showAllAmbiguous),
+                          icon: Icon(
+                            _showAllAmbiguous ? Icons.expand_less : Icons.expand_more,
+                            size: 18,
+                          ),
+                          label: Text(
+                            _showAllAmbiguous
+                                ? 'Sembunyikan sebagian'
+                                : 'Lihat ${_ambiguousItems.length - _ambiguousPreviewCount} item lainnya',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
                   ],
 
                   const SizedBox(height: 24),

@@ -221,26 +221,32 @@ Future<void> _saveProduct() async {
 
   if (!mounted) return;
 
-if (success) {
-  if (!mounted) return;
+  if (success) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Produk berhasil disimpan.'),
+        backgroundColor: Colors.green,
+      ),
+    );
 
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('The product has been successfully saved.'),
-    ),
-  );
+    // Bersihkan form
+    _nameC.clear();
+    _qtyC.clear();
+    _priceC.clear();
+    _barcodeC.clear();
 
-  // Bersihkan form
-  _nameC.clear();
-  _qtyC.clear();
-  _priceC.clear();
-  _barcodeC.clear();
-
-  setState(() {
-    _unit = 'pcs';
-    _expiredDate = null;
-  });
-}
+    setState(() {
+      _unit = 'pcs';
+      _expiredDate = null;
+    });
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Gagal menyimpan produk. Silakan coba lagi.'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
 }
 
   @override
